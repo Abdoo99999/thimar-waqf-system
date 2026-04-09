@@ -1,0 +1,169 @@
+export type InstitutionType = 'وقفية عامة' | 'وقفية خاصة';
+
+export interface InstitutionDocument {
+  id: string;
+  name: string;
+  type: string;
+  size: string;
+  upload_date: string;
+}
+
+export interface Institution {
+  id: string;
+  name: string;
+  type: InstitutionType;
+  capital_omr: number;
+  employees_omani: number;
+  employees_non_omani: number;
+  contact_phone: string;
+  email?: string;
+  governorate?: string;
+  wilayat?: string;
+  
+  // New Fields
+  establishment_date?: string; // تاريخ التأسيس
+  license_number?: string; // رقم السجل/الترخيص
+  manager_name?: string; // مدير المؤسسة
+  declaration_date?: string; // تاريخ الإشهار
+  commercial_record_number?: string; // رقم السجل التجاري
+  establishment_decision_doc?: InstitutionDocument; // مرفقات قرار التأسيس
+  
+  // Workflow Control
+  profile_completed?: boolean; // Flag to force user to save data first
+
+  notes?: string;
+  documents?: InstitutionDocument[];
+  financial_reports?: Partial<FinancialRecord>[];
+  created_at: string;
+}
+
+// --- NEW: Financial Governance Schema ---
+export interface FinancialRecord {
+  id: string;
+  institution_id: string;
+  fiscal_year: number;
+  auditor_name: string;
+  
+  // 1. Statement of Financial Position (المركز المالي)
+  total_assets: number;
+  total_liabilities: number;
+  net_waqf_assets: number; // Net Assets / Equity
+  
+  // 2. Income Statement (قائمة الدخل)
+  total_revenues: number;
+  total_expenses: number;
+  admin_general_expenses: number; // Critical for governance
+  surplus_deficit: number; // Computed
+
+  // 3. Cash Flow Statement (قائمة التدفقات النقدية) - NEW ADDITION
+  operating_cash_flow?: number; // صافي النقد من الأنشطة التشغيلية
+  investing_cash_flow?: number; // صافي النقد من الأنشطة الاستثمارية
+  financing_cash_flow?: number; // صافي النقد من الأنشطة التمويلية
+  cash_end_period?: number;     // النقد وما في حكمه في نهاية الفترة
+  
+  // Governance & Meta
+  audit_report_pdf?: InstitutionDocument;
+  status: 'Draft' | 'Submitted' | 'Approved' | 'Flagged';
+  flags: string[]; // Array of warning messages
+  submission_date?: string;
+}
+
+export interface Indicator {
+  id: string;
+  axis: string; // المحور
+  text: string; // وصف التقييم
+  weight: number;
+  active: boolean;
+}
+
+export interface Evaluation {
+  id: string;
+  institution_id: string;
+  cycle_year: number;
+  cycle_date: string;
+  evaluator_name?: string;
+  status: 'draft' | 'final'; // Internal status (User side)
+  
+  // WORKFLOW FIELDS
+  workflow_status?: 'draft' | 'submitted' | 'returned' | 'approved'; 
+  submission_date?: string;
+  admin_feedback?: string; // Reason for return
+
+  attachments?: InstitutionDocument[];
+  created_at: string;
+}
+
+export interface Response {
+  id: string;
+  evaluation_id: string;
+  indicator_id: string;
+  score: number; // 1-5
+  evidence_text?: string;
+  evidence_doc?: InstitutionDocument;
+  updated_at: string;
+}
+
+export interface CustomRequirement {
+    id: string;
+    text: string;
+    met: boolean;
+    evidence_doc?: InstitutionDocument;
+}
+
+export interface ComplianceRecord {
+  id: string;
+  institution_id: string;
+  cycle_year: number;
+  institution_status: 'فاعلة' | 'غير فاعلة' | 'قيد التصفية' | 'متوقفة' | 'أخرى';
+  board_status: 'قائم' | 'منتهي' | 'غير موجود';
+  board_end_date?: string;
+  
+  // Core Fields (Fixed Logic)
+  has_executive_management: boolean;
+  has_auditor_company: boolean;
+  has_minutes_prev_year: boolean; // e.g., 2023
+  has_financial_report_prev_year: boolean; // e.g., 2023
+  
+  // Logic to handle Core Requirements Customization
+  hidden_core_requirements?: string[]; // Keys of core reqs to hide/delete
+  renamed_core_requirements?: Record<string, string>; // Keys map to new labels
+  core_evidence?: Record<string, InstitutionDocument>; // Evidence for core reqs
+
+  custom_requirements?: CustomRequirement[]; // Dynamic requirements
+
+  followup_actions?: string;
+  notes?: string;
+  last_updated_at: string;
+}
+
+export interface RiskRegisterItem {
+  id: string;
+  institution_id: string;
+  risk_title: string;
+  category: 'Strategic' | 'Financial' | 'Operational' | 'Legal';
+  probability: number; // 1-5
+  impact: number; // 1-5
+  mitigation_plan: string;
+  status: 'Open' | 'Mitigated' | 'Closed';
+}
+
+export interface ImprovementItem {
+  id: string;
+  evaluation_id: string;
+  indicator_id: string;
+  priority: 'High' | 'Medium' | 'Low';
+  issue_summary: string;
+  recommended_action: string;
+  owner: string;
+  due_date: string;
+  status: 'ToDo' | 'Doing' | 'Done';
+  notes?: string;
+  evidence_doc?: InstitutionDocument; // Added for attachment in Done column
+}
+
+// Helper types for charts
+export interface ChartData {
+  name: string;
+  value: number;
+  fill?: string;
+}
