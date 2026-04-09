@@ -9,6 +9,9 @@ export default defineConfig(({ mode }) => {
         port: 5000,
         host: '0.0.0.0',
         allowedHosts: 'all',
+        watch: {
+          ignored: ['**/.local/**', '**/node_modules/**'],
+        },
       },
       plugins: [react()],
       define: {
