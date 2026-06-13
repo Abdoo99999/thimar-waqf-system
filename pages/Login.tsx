@@ -91,7 +91,7 @@ const Login: React.FC = () => {
                     onError={(e) => { e.currentTarget.style.display = 'none'; }}
                 />
             </div>
-            <h1 className="text-xl md:text-2xl font-bold text-white mb-2 leading-tight">نظام تقييم المؤسسات الوقفية (ثِمار)</h1>
+            <h1 className="text-xl md:text-2xl font-bold text-white mb-2 leading-tight">نظام تقييم المؤسسات الوقفية</h1>
             <p className="text-gray-300 text-sm font-medium tracking-wide opacity-90">وزارة الأوقاف والشؤون الدينية</p>
         </div>
         

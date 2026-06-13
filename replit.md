@@ -1,4 +1,4 @@
-# Waqf Evaluation System (نظام تقييم المؤسسات الوقفية - ثمار)
+# Waqf Evaluation System (نظام تقييم المؤسسات الوقفية)
 
 ## Overview
 A management and evaluation platform for Omani Waqf (charitable endowment) institutions. Built for the Ministry of Endowments and Religious Affairs, it provides a structured sequential workflow for institutions to submit data, financial reports, and compliance information while administrators can monitor and evaluate submissions.

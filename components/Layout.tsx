@@ -248,7 +248,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                  />
              </div>
              <div className="flex flex-col">
-                 <h1 className="text-sm font-bold text-white leading-tight">نظام تقييم المؤسسات الوقفية (ثِمار)</h1>
+                 <h1 className="text-sm font-bold text-white leading-tight">نظام تقييم المؤسسات الوقفية</h1>
                  <span className="text-[10px] text-gray-400 mt-1 font-medium">وزارة الأوقاف والشؤون الدينية</span>
              </div>
           </div>
@@ -299,7 +299,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             </button>
             
             <div className="flex flex-col items-center flex-1 lg:flex-none lg:items-start">
-                <h2 className="text-xl font-bold text-navy-900 dark:text-white">نظام تقييم المؤسسات الوقفية (ثِمار)</h2>
+                <h2 className="text-xl font-bold text-navy-900 dark:text-white">نظام تقييم المؤسسات الوقفية</h2>
                 <span className="text-xs text-teal-600 dark:text-teal-400 font-semibold hidden md:block">سلطنة عُمان - {settings.orgName}</span>
             </div>
 
