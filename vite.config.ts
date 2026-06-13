@@ -12,6 +12,12 @@ export default defineConfig(({ mode }) => {
         watch: {
           ignored: ['**/.local/**', '**/node_modules/**'],
         },
+        proxy: {
+          '/api': {
+            target: 'http://localhost:3001',
+            changeOrigin: true,
+          }
+        }
       },
       plugins: [react()],
       define: {

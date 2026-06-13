@@ -2,7 +2,6 @@
 import { Institution, Indicator, Evaluation, Response, ComplianceRecord, ImprovementItem, RiskRegisterItem, FinancialRecord } from '../types';
 import { DEFAULT_INDICATORS, CURRENT_YEAR, SEEDED_INSTITUTIONS, GOVERNORATES } from '../constants';
 
-// --- Keys ---
 const DB_KEYS = {
   INSTITUTIONS: 'waqf_institutions',
   LEGACY_INSTITUTIONS: 'institutions',
@@ -16,16 +15,15 @@ const DB_KEYS = {
   SETTINGS: 'waqf_settings'
 };
 
-// --- In-Memory Cache ---
+const API = '/api';
+
 const cache: Record<string, any> = {};
 
-// --- Helper: Generators ---
 export const generateId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 const getRandomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 const getRandomItem = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 const SIMPLE_NAMES = ['محمد', 'علي', 'أحمد', 'سالم', 'خالد', 'سعيد', 'عبدالله', 'ناصر', 'يوسف', 'عمر'];
 
-// --- Helper: Location Logic ---
 const inferDetailsByName = (name: string) => {
   const n = name;
   if (n.includes('صحار')) return { gov: 'شمال الباطنة', wil: 'صحار' };
@@ -48,30 +46,25 @@ const inferDetailsByName = (name: string) => {
   return { gov: 'مسقط', wil: 'بوشر' };
 };
 
-// --- Helper: Financial Data Generator ---
 const generateDummyFinancials = (instId: string, year: number, type: 'GOOD' | 'AVERAGE' | 'BAD'): FinancialRecord => {
-    const baseAssets = getRandomInt(100000, 5000000); 
-    const assets = year === 2025 ? Math.floor(baseAssets * 1.05) : baseAssets; 
-    
-    const liabilities = Math.floor(assets * (getRandomInt(1, 10) / 100)); 
+    const baseAssets = getRandomInt(100000, 5000000);
+    const assets = year === 2025 ? Math.floor(baseAssets * 1.05) : baseAssets;
+    const liabilities = Math.floor(assets * (getRandomInt(1, 10) / 100));
     const netAssets = assets - liabilities;
-
     let revenue = 0, expenses = 0, adminExpenses = 0;
-
     if (type === 'GOOD') {
-        revenue = Math.floor(assets * 0.15); 
-        expenses = Math.floor(revenue * 0.70); 
-        adminExpenses = Math.floor(expenses * 0.10); 
+        revenue = Math.floor(assets * 0.15);
+        expenses = Math.floor(revenue * 0.70);
+        adminExpenses = Math.floor(expenses * 0.10);
     } else if (type === 'AVERAGE') {
-        revenue = Math.floor(assets * 0.08); 
-        expenses = Math.floor(revenue * 0.95); 
-        adminExpenses = Math.floor(expenses * 0.18); 
-    } else { // BAD
-        revenue = Math.floor(assets * 0.03); 
-        expenses = Math.floor(revenue * 1.5); 
-        adminExpenses = Math.floor(expenses * 0.40); 
+        revenue = Math.floor(assets * 0.08);
+        expenses = Math.floor(revenue * 0.95);
+        adminExpenses = Math.floor(expenses * 0.18);
+    } else {
+        revenue = Math.floor(assets * 0.03);
+        expenses = Math.floor(revenue * 1.5);
+        adminExpenses = Math.floor(expenses * 0.40);
     }
-
     return {
         id: generateId(),
         institution_id: instId,
@@ -84,8 +77,7 @@ const generateDummyFinancials = (instId: string, year: number, type: 'GOOD' | 'A
         total_expenses: expenses,
         admin_general_expenses: adminExpenses,
         surplus_deficit: revenue - expenses,
-        // Added realistic cash flow for new dashboard design
-        cash_end_period: Math.floor(revenue * 0.2), 
+        cash_end_period: Math.floor(revenue * 0.2),
         operating_cash_flow: Math.floor(revenue * 0.25),
         status: type === 'BAD' ? 'Flagged' : 'Submitted',
         flags: [],
@@ -93,18 +85,11 @@ const generateDummyFinancials = (instId: string, year: number, type: 'GOOD' | 'A
     };
 };
 
-// --- SAFE PARSE HELPER ---
 const safeParse = <T>(json: string | null, fallback: T): T => {
     if (!json) return fallback;
-    try {
-        return JSON.parse(json);
-    } catch (e) {
-        console.warn("Recovered from corrupted data:", e);
-        return fallback;
-    }
+    try { return JSON.parse(json); } catch (e) { return fallback; }
 };
 
-// --- DB ACCESS FUNCTIONS ---
 const data = <T>(key: string): T[] => {
   if (cache[key]) return cache[key];
   const stored = localStorage.getItem(key);
@@ -115,43 +100,30 @@ const data = <T>(key: string): T[] => {
 
 const save = <T>(key: string, items: T[]) => {
   cache[key] = items;
-  // Use try-catch to prevent quota exceeded errors from crashing the app
-  try {
-      localStorage.setItem(key, JSON.stringify(items));
-  } catch (e) {
-      console.error("Storage quota exceeded or error saving:", e);
-  }
+  try { localStorage.setItem(key, JSON.stringify(items)); } catch (e) { console.error('localStorage error:', e); }
+  fetch(`${API}/${key}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(items),
+  }).catch(e => console.warn(`[DB] Server sync failed for ${key}:`, e));
 };
 
-// --- INITIALIZATION (LITE MODE: 5 VIPs Only) ---
 const initializeDatabase = () => {
-    // Check if data exists. If yes, DO NOTHING (to preserve speed).
-    // The user must use "Factory Reset" to regenerate.
-    if (localStorage.getItem(DB_KEYS.INSTITUTIONS)) {
-        return; 
-    }
-
+    if (localStorage.getItem(DB_KEYS.INSTITUTIONS)) return;
     console.log("Initializing LITE Database (5 VIPs)...");
-
-    // Load financials map for syncing
     const currentFinancials: FinancialRecord[] = [];
     const mergedMap = new Map<string, Institution>();
     let financialsChanged = false;
 
-    // Process Seed Data
     SEEDED_INSTITUTIONS.forEach((seedInst: any, index) => {
-        const id = seedInst.id || generateId(); 
+        const id = seedInst.id || generateId();
         const location = inferDetailsByName(seedInst.name);
         const simpleManager = getRandomItem(SIMPLE_NAMES);
-        
-        // --- THE MAGIC: ONLY TOP 5 GET DATA ---
-        // FIX: Start VIP from index 1 (Indices 1 to 5), so index 0 (First User) is empty for testing flow
-        const isVIP = index > 0 && index <= 5; 
-
+        const isVIP = index > 0 && index <= 5;
         const mod = index % 10;
         let type: 'GOOD' | 'AVERAGE' | 'BAD' = 'GOOD';
-        if (mod > 7) type = 'BAD';       
-        else if (mod > 5) type = 'AVERAGE'; 
+        if (mod > 7) type = 'BAD';
+        else if (mod > 5) type = 'AVERAGE';
 
         const instObj: Institution = {
             ...seedInst,
@@ -166,32 +138,28 @@ const initializeDatabase = () => {
             capital_omr: seedInst.capital_omr || getRandomInt(100000, 5000000),
             employees_omani: seedInst.employees_omani || getRandomInt(2, 15),
             employees_non_omani: seedInst.employees_non_omani || getRandomInt(0, 5),
-            // ONLY VIPs look "Active/Completed"
-            profile_completed: isVIP, 
+            profile_completed: isVIP,
             institution_status: 'فاعلة',
             board_status: 'قائم',
             has_executive_management: true,
             has_auditor_company: true,
             has_financial_report_prev_year: true,
             has_minutes_prev_year: true,
-            financial_reports: [], // Will be synced separately
+            financial_reports: [],
             created_at: new Date().toISOString(),
-            documents: [] // Keep empty for lightness
+            documents: []
         };
 
-        // ONLY generate financials for VIPs (Index 1-5)
         if (isVIP) {
             const fin2024 = generateDummyFinancials(id, 2024, type);
             const fin2025 = generateDummyFinancials(id, 2025, type);
             instObj.financial_reports = [fin2024, fin2025];
         }
-
         mergedMap.set(seedInst.name, instObj);
     });
 
     const finalResults = Array.from(mergedMap.values());
 
-    // Sync Financials to separate table (Only for VIPs found above)
     finalResults.forEach(inst => {
         if (inst.financial_reports && inst.financial_reports.length > 0) {
             inst.financial_reports.forEach(report => {
@@ -219,7 +187,6 @@ const initializeDatabase = () => {
     });
 
     save(DB_KEYS.INSTITUTIONS, finalResults);
-    
     if (financialsChanged || currentFinancials.length === 0) {
         save(DB_KEYS.FINANCIALS, currentFinancials);
     } else {
@@ -227,95 +194,80 @@ const initializeDatabase = () => {
     }
 };
 
-// Run init once on load
-try {
+export const dbReady: Promise<void> = (async () => {
+  try {
+    const collectionKeys = Object.values(DB_KEYS).filter(k => k !== DB_KEYS.SETTINGS);
+
+    const responses = await Promise.all(
+      collectionKeys.map(k =>
+        fetch(`${API}/${k}`)
+          .then(r => r.ok ? r.json() : [])
+          .catch(() => [])
+      )
+    );
+
+    let hasServerData = false;
+    collectionKeys.forEach((key, i) => {
+      const d = responses[i];
+      if (Array.isArray(d) && d.length > 0) {
+        cache[key] = d;
+        try { localStorage.setItem(key, JSON.stringify(d)); } catch (e) {}
+        if (key === DB_KEYS.INSTITUTIONS) hasServerData = true;
+      }
+    });
+
+    const settingsData = await fetch(`${API}/${DB_KEYS.SETTINGS}`)
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null);
+    if (settingsData && !Array.isArray(settingsData) && Object.keys(settingsData).length > 0) {
+      localStorage.setItem(DB_KEYS.SETTINGS, JSON.stringify(settingsData));
+    }
+
+    if (!hasServerData) {
+      collectionKeys.forEach(k => { localStorage.removeItem(k); delete cache[k]; });
+      initializeDatabase();
+    }
+
+  } catch (e) {
+    console.warn('[DB] Server unavailable, falling back to localStorage:', e);
     initializeDatabase();
-} catch (e) {
-    console.error("Failed to initialize DB:", e);
-}
+  }
+})();
 
-// --- EXPORTS ---
 export const getInstitutions = (): Institution[] => data<Institution>(DB_KEYS.INSTITUTIONS);
-
-// ==========================================
-// 🚀 MAINTENANCE & SMART CLEANUP
-// ==========================================
 
 export const clearSystemCache = () => {
     try {
         Object.values(DB_KEYS).forEach(key => {
             localStorage.removeItem(key);
-            if(cache[key]) delete cache[key];
+            if (cache[key]) delete cache[key];
         });
-        // FIX: Use Redirect instead of Reload to avoid Grey Screen in IDX
-        window.location.href = "/";
-    } catch(e) {
+        fetch(`${API}/reset`, { method: 'DELETE' })
+          .finally(() => { window.location.href = "/"; })
+          .catch(() => { window.location.href = "/"; });
+    } catch (e) {
         alert("حدث خطأ أثناء مسح الذاكرة.");
     }
 };
 
-// Auto-repair for dev/demo purposes: Ensure first institution is reset to incomplete if it was previously set to complete
-const repairFirstInstitution = () => {
-    try {
-        const insts = getInstitutions();
-        if (insts.length > 0) {
-            // Find the institution that is usually first in SEEDED_INSTITUTIONS
-            const first = insts.find(i => i.name.includes("جابر بن زيد"));
-            
-            // If it exists and profile is completed, reset it to demonstrate the workflow
-            if (first && first.profile_completed) {
-                console.log("Auto-repairing flow for first institution...");
-                
-                // 1. Reset Profile
-                first.profile_completed = false;
-                saveInstitution(first);
-                
-                // 2. Remove any associated financials to lock the second step
-                const allFin = data<FinancialRecord>(DB_KEYS.FINANCIALS);
-                const filteredFin = allFin.filter(f => f.institution_id !== first.id);
-                if (allFin.length !== filteredFin.length) {
-                    save(DB_KEYS.FINANCIALS, filteredFin);
-                }
-                
-                // 3. Remove evaluations/compliance to lock further steps
-                // (Optional but good for cleanliness, keeping it simple for now)
-            }
-        }
-    } catch (e) {
-        console.warn("Auto-repair skipped");
-    }
-};
-// Run repair
-repairFirstInstitution();
-
-
-// Smart Cleanup: Forces a reset to the "Lite Mode" (5 VIPs)
 export const performSmartCleanup = () => {
   try {
     console.log("Forcing Smart Cleanup (Reset to Lite Mode)...");
-    
-    // 1. WIPE EVERYTHING
     Object.values(DB_KEYS).forEach(key => {
         localStorage.removeItem(key);
-        if(cache[key]) delete cache[key];
+        if (cache[key]) delete cache[key];
     });
-
-    // 2. Re-Initialize (This will trigger the new LITE logic above)
     initializeDatabase();
-
-    // 3. Redirect to Home (FIX for Grey Screen)
     setTimeout(() => {
         alert(`✅ تم تسريع النظام بنجاح!\n\nتم الاحتفاظ ببيانات 5 مؤسسات فقط للعرض.\nباقي المؤسسات تظهر كأرشيف (اسم فقط).`);
-        window.location.href = "/"; 
+        window.location.href = "/";
     }, 100);
-
   } catch (error) {
     console.error("Cleanup Failed:", error);
     alert("حدث خطأ أثناء محاولة تسريع النظام.");
   }
 };
 
-// --- Other Exports ---
 export const saveInstitution = (inst: Institution) => {
   const list = getInstitutions();
   const index = list.findIndex(i => i.id === inst.id);
@@ -351,48 +303,52 @@ export const deleteFinancialRecord = (id: string) => {
   const list = data<FinancialRecord>(DB_KEYS.FINANCIALS).filter(r => r.id !== id);
   save(DB_KEYS.FINANCIALS, list);
 };
-export const getIndicators = () => { let s = data<Indicator>(DB_KEYS.INDICATORS); if(!s.length) { save(DB_KEYS.INDICATORS, DEFAULT_INDICATORS); s = DEFAULT_INDICATORS; } return s; };
+export const getIndicators = () => {
+  let s = data<Indicator>(DB_KEYS.INDICATORS);
+  if (!s.length) { save(DB_KEYS.INDICATORS, DEFAULT_INDICATORS); s = DEFAULT_INDICATORS; }
+  return s;
+};
 export const saveIndicators = (i: Indicator[]) => save(DB_KEYS.INDICATORS, i);
 export const getEvaluations = (y?: number) => { const e = data<Evaluation>(DB_KEYS.EVALUATIONS); return y ? e.filter(x => x.cycle_year === y) : e; };
 export const getEvaluationByInstAndYear = (id: string, y: number) => getEvaluations().find(e => e.institution_id === id && e.cycle_year === y);
-export const saveEvaluation = (e: Evaluation) => { const l = getEvaluations(); const i = l.findIndex(x => x.id === e.id); if(i>=0) l[i] = e; else l.push(e); save(DB_KEYS.EVALUATIONS, l); };
+export const saveEvaluation = (e: Evaluation) => { const l = getEvaluations(); const i = l.findIndex(x => x.id === e.id); if (i >= 0) l[i] = e; else l.push(e); save(DB_KEYS.EVALUATIONS, l); };
 export const getPendingEvaluationsCount = () => getEvaluations(CURRENT_YEAR).filter(e => e.workflow_status === 'submitted').length;
 export const getResponses = (id: string) => data<Response>(DB_KEYS.RESPONSES).filter(r => r.evaluation_id === id);
 export const getAllResponses = () => data<Response>(DB_KEYS.RESPONSES);
-export const saveResponse = (r: Response) => { const l = data<Response>(DB_KEYS.RESPONSES); const i = l.findIndex(x => x.evaluation_id === r.evaluation_id && x.indicator_id === r.indicator_id); if(i>=0) l[i] = { ...l[i], ...r }; else l.push({ ...r, id: generateId() }); save(DB_KEYS.RESPONSES, l); };
+export const saveResponse = (r: Response) => { const l = data<Response>(DB_KEYS.RESPONSES); const i = l.findIndex(x => x.evaluation_id === r.evaluation_id && x.indicator_id === r.indicator_id); if (i >= 0) l[i] = { ...l[i], ...r }; else l.push({ ...r, id: generateId() }); save(DB_KEYS.RESPONSES, l); };
 export const getComplianceRecords = (y?: number) => { const r = data<ComplianceRecord>(DB_KEYS.COMPLIANCE); return y ? r.filter(x => x.cycle_year === y) : r; };
 export const getComplianceByInstAndYear = (id: string, y: number) => getComplianceRecords(y).find(r => r.institution_id === id);
-export const saveComplianceRecord = (r: ComplianceRecord) => { const l = data<ComplianceRecord>(DB_KEYS.COMPLIANCE); const i = l.findIndex(x => x.id === r.id); if(i>=0) l[i] = r; else l.push(r); save(DB_KEYS.COMPLIANCE, l); };
+export const saveComplianceRecord = (r: ComplianceRecord) => { const l = data<ComplianceRecord>(DB_KEYS.COMPLIANCE); const i = l.findIndex(x => x.id === r.id); if (i >= 0) l[i] = r; else l.push(r); save(DB_KEYS.COMPLIANCE, l); };
 export const getRisks = (id?: string) => { const a = data<RiskRegisterItem>(DB_KEYS.RISKS); return id ? a.filter(r => r.institution_id === id) : a; };
-export const saveRisk = (r: RiskRegisterItem) => { const l = data<RiskRegisterItem>(DB_KEYS.RISKS); const i = l.findIndex(x => x.id === r.id); if(i>=0) l[i] = r; else l.push(r); save(DB_KEYS.RISKS, l); };
+export const saveRisk = (r: RiskRegisterItem) => { const l = data<RiskRegisterItem>(DB_KEYS.RISKS); const i = l.findIndex(x => x.id === r.id); if (i >= 0) l[i] = r; else l.push(r); save(DB_KEYS.RISKS, l); };
 export const deleteRisk = (id: string) => save(DB_KEYS.RISKS, data<RiskRegisterItem>(DB_KEYS.RISKS).filter(x => x.id !== id));
 export const getImprovements = (id: string) => data<ImprovementItem>(DB_KEYS.IMPROVEMENTS).filter(i => i.evaluation_id === id);
-export const saveImprovement = (i: ImprovementItem) => { const l = data<ImprovementItem>(DB_KEYS.IMPROVEMENTS); const x = l.findIndex(z => z.id === i.id); if(x>=0) l[x] = i; else l.push(i); save(DB_KEYS.IMPROVEMENTS, l); };
+export const saveImprovement = (i: ImprovementItem) => { const l = data<ImprovementItem>(DB_KEYS.IMPROVEMENTS); const x = l.findIndex(z => z.id === i.id); if (x >= 0) l[x] = i; else l.push(i); save(DB_KEYS.IMPROVEMENTS, l); };
 export const deleteImprovement = (id: string) => save(DB_KEYS.IMPROVEMENTS, data<ImprovementItem>(DB_KEYS.IMPROVEMENTS).filter(x => x.id !== id));
 export const getSettings = () => { const s = localStorage.getItem(DB_KEYS.SETTINGS); return safeParse(s, { managerName: 'د. عبدالرحمن النوفلي', darkMode: false, orgName: 'وزارة الأوقاف والشؤون الدينية' }); };
-export const saveSettings = (s: any) => { localStorage.setItem(DB_KEYS.SETTINGS, JSON.stringify(s)); window.dispatchEvent(new Event('settingsChanged')); };
+export const saveSettings = (s: any) => {
+  localStorage.setItem(DB_KEYS.SETTINGS, JSON.stringify(s));
+  fetch(`${API}/${DB_KEYS.SETTINGS}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(s),
+  }).catch(console.warn);
+  window.dispatchEvent(new Event('settingsChanged'));
+};
 
-// --- UPDATED PROGRESS TRACKER (STRICT SEQUENTIAL) ---
 export const getInstitutionProgress = (id: string | null) => {
-  // If no ID is selected, nothing is done.
   if (!id) return { dataComplete: false, financialsDone: false, evalFinalized: false, complianceDone: false, workflowStatus: 'draft' as const, isLocked: false };
-  
   const i = getInstitutions().find(x => x.id === id);
   const e = getEvaluations().find(x => x.institution_id === id && x.cycle_year === CURRENT_YEAR);
   const c = getComplianceRecords().find(x => x.institution_id === id && x.cycle_year === CURRENT_YEAR);
-  
-  // Strict Financial Check: Must exist for current year (or prev) AND status must be 'Submitted' or 'Approved' (not Draft/Null)
-  // Note: In this system, saving financials defaults to 'Submitted', so existence is usually enough, but we add checks.
   const f = getFinancialRecords(id).find(r => r.fiscal_year === CURRENT_YEAR || r.fiscal_year === CURRENT_YEAR - 1);
   const isFinancialsSubmitted = !!f && (f.status === 'Submitted' || f.status === 'Approved' || f.status === 'Flagged');
-
-  return { 
-      dataComplete: !!(i?.profile_completed), // Strict Step 1
-      financialsDone: isFinancialsSubmitted,  // Strict Step 2
-      evalFinalized: !!(e?.status === 'final'), // Strict Step 3
-      complianceDone: !!c && getRisks(id).length > 0, // Strict Step 4 (Any save creates a record, but must have risks)
-      
-      workflowStatus: e?.workflow_status || 'draft', 
-      isLocked: e?.workflow_status === 'submitted' || e?.workflow_status === 'approved' 
+  return {
+      dataComplete: !!(i?.profile_completed),
+      financialsDone: isFinancialsSubmitted,
+      evalFinalized: !!(e?.status === 'final'),
+      complianceDone: !!c && getRisks(id).length > 0,
+      workflowStatus: e?.workflow_status || 'draft',
+      isLocked: e?.workflow_status === 'submitted' || e?.workflow_status === 'approved'
   };
 };

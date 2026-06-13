@@ -9,12 +9,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "express": "^5.2.1",
+    "lucide-react": "^0.562.0",
+    "pg": "^8.21.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
-    "lucide-react": "^0.562.0",
+    "react-router-dom": "^7.11.0",
     "recharts": "^3.6.0",
-    "uuid": "^13.0.0",
-    "react-router-dom": "^7.11.0"
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

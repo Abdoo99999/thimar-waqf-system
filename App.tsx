@@ -3,11 +3,10 @@ import React, { Suspense, lazy } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import { UiProvider, useUi } from './contexts/UiContext';
-import { getInstitutionProgress } from './services/db';
+import { getInstitutionProgress, dbReady } from './services/db';
 import { Lock, Loader2 } from 'lucide-react';
 import Login from './pages/Login';
 
-// --- Lazy Load Pages ---
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Institutions = lazy(() => import('./pages/Institutions'));
 const EvaluationPage = lazy(() => import('./pages/Evaluation'));
@@ -19,7 +18,6 @@ const ReviewSubmit = lazy(() => import('./pages/ReviewSubmit'));
 const ApprovalRequests = lazy(() => import('./pages/ApprovalRequests'));
 const FinancialReports = lazy(() => import('./pages/FinancialReports'));
 
-// Loading Component
 const PageLoader = () => (
   <div className="flex flex-col items-center justify-center h-[80vh] text-navy-800">
     <Loader2 size={48} className="animate-spin mb-4 text-teal-600" />
@@ -27,31 +25,20 @@ const PageLoader = () => (
   </div>
 );
 
-// Protected Route Component handling Auth and Role Check
 const ProtectedRoute: React.FC<{ children: React.ReactNode, requiredRole?: 'admin' | 'user' }> = ({ children, requiredRole }) => {
     const { isAuthenticated, role } = useUi();
-    
-    if (!isAuthenticated) {
-        return <Login />;
-    }
-
-    // If route requires admin but user is not admin
-    if (requiredRole === 'admin' && role !== 'admin') {
-        return <Navigate to="/institutions" replace />;
-    }
-
+    if (!isAuthenticated) return <Login />;
+    if (requiredRole === 'admin' && role !== 'admin') return <Navigate to="/institutions" replace />;
     return <>{children}</>;
 };
 
-// Sequential Workflow Guard for Users
-const SequentialRoute: React.FC<{ 
-    children: React.ReactNode, 
-    prereq: 'data' | 'financials' | 'evaluation' | 'compliance' 
+const SequentialRoute: React.FC<{
+    children: React.ReactNode,
+    prereq: 'data' | 'financials' | 'evaluation' | 'compliance'
 }> = ({ children, prereq }) => {
     const { role, currentWaqfId } = useUi();
     const progress = getInstitutionProgress(currentWaqfId);
 
-    // Admins bypass sequence
     if (role === 'admin') return <>{children}</>;
 
     let isAllowed = false;
@@ -59,22 +46,18 @@ const SequentialRoute: React.FC<{
     let message = 'يرجى استكمال البيانات السابقة أولاً';
 
     if (prereq === 'data') {
-        // Checking if we can enter Financials
         isAllowed = progress.dataComplete;
         redirectPath = '/institutions';
         message = 'يرجى استكمال وحفظ بيانات المؤسسة أولاً للدخول إلى التقارير المالية.';
     } else if (prereq === 'financials') {
-        // Checking if we can enter Evaluation
         isAllowed = progress.dataComplete && progress.financialsDone;
         redirectPath = '/financial-reports';
         message = 'يرجى استكمال وحفظ التقارير والقوائم المالية أولاً للدخول إلى الأداء المؤسسي.';
     } else if (prereq === 'evaluation') {
-        // Checking if we can enter Compliance
         isAllowed = progress.evalFinalized;
         redirectPath = '/evaluation';
         message = 'يرجى اعتماد الأداء المؤسسي النهائي أولاً للدخول إلى الامتثال والمخاطر.';
     } else if (prereq === 'compliance') {
-        // Checking if we can enter Improvements / Submit
         isAllowed = progress.complianceDone;
         redirectPath = '/compliance';
         message = 'يرجى مراجعة صفحة الامتثال والمخاطر أولاً.';
@@ -98,16 +81,10 @@ const SequentialRoute: React.FC<{
     return <>{children}</>;
 };
 
-// Root Redirect based on Role
 const HomeRedirect: React.FC = () => {
     const { isAuthenticated, role } = useUi();
-    
     if (!isAuthenticated) return <Login />;
-    
-    // Admin goes to Strategic Dashboard
     if (role === 'admin') return <Dashboard />;
-    
-    // User goes to their Institution Data
     return <Navigate to="/institutions" replace />;
 };
 
@@ -116,71 +93,72 @@ const AppRoutes: React.FC = () => {
         <Suspense fallback={<PageLoader />}>
             <Routes>
             <Route path="/" element={<HomeRedirect />} />
-            
-            {/* Admin Only Routes */}
             <Route path="/reports" element={<ProtectedRoute requiredRole="admin"><Reports /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute requiredRole="admin"><Settings /></ProtectedRoute>} />
             <Route path="/approval-requests" element={<ProtectedRoute requiredRole="admin"><ApprovalRequests /></ProtectedRoute>} />
-
-            {/* Shared Routes (Admin & User) */}
             <Route path="/institutions" element={<ProtectedRoute><Institutions /></ProtectedRoute>} />
-            
-            {/* SEQUENTIAL WORKFLOW ROUTES */}
             <Route path="/financial-reports" element={
                 <ProtectedRoute>
-                    <SequentialRoute prereq="data">
-                        <FinancialReports />
-                    </SequentialRoute>
+                    <SequentialRoute prereq="data"><FinancialReports /></SequentialRoute>
                 </ProtectedRoute>
             } />
-
             <Route path="/evaluation" element={
                 <ProtectedRoute>
-                    <SequentialRoute prereq="financials">
-                        <EvaluationPage />
-                    </SequentialRoute>
+                    <SequentialRoute prereq="financials"><EvaluationPage /></SequentialRoute>
                 </ProtectedRoute>
             } />
-            
             <Route path="/compliance" element={
                 <ProtectedRoute>
-                    <SequentialRoute prereq="evaluation">
-                        <CompliancePage />
-                    </SequentialRoute>
+                    <SequentialRoute prereq="evaluation"><CompliancePage /></SequentialRoute>
                 </ProtectedRoute>
             } />
-            
             <Route path="/improvements" element={
                 <ProtectedRoute>
-                    <SequentialRoute prereq="compliance">
-                        <Improvements />
-                    </SequentialRoute>
+                    <SequentialRoute prereq="compliance"><Improvements /></SequentialRoute>
                 </ProtectedRoute>
             } />
-            
             <Route path="/review-submit" element={
                 <ProtectedRoute>
-                    <SequentialRoute prereq="compliance">
-                        <ReviewSubmit />
-                    </SequentialRoute>
+                    <SequentialRoute prereq="compliance"><ReviewSubmit /></SequentialRoute>
                 </ProtectedRoute>
             } />
-            
             <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
         </Suspense>
     );
 };
 
+const DbLoader: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [isReady, setIsReady] = React.useState(false);
+
+  React.useEffect(() => {
+    dbReady.then(() => setIsReady(true), () => setIsReady(true));
+  }, []);
+
+  if (!isReady) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-navy-900">
+        <Loader2 size={52} className="animate-spin mb-5 text-teal-400" />
+        <p className="text-white text-lg font-bold">جاري تحميل النظام...</p>
+        <p className="text-gray-400 text-sm mt-2">يتم الاتصال بقاعدة البيانات</p>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+};
+
 const App: React.FC = () => {
   return (
-    <UiProvider>
+    <DbLoader>
+      <UiProvider>
         <Router>
           <Layout>
             <AppRoutes />
           </Layout>
         </Router>
-    </UiProvider>
+      </UiProvider>
+    </DbLoader>
   );
 };
 
