@@ -19,12 +19,19 @@ app.use((req, res, next) => {
   next();
 });
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  connectionTimeoutMillis: 5000,
+  idleTimeoutMillis: 30000,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
 
 const distPath = path.join(__dirname, 'dist');
 if (existsSync(distPath)) {
   app.use(express.static(distPath));
 }
+
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.get('/api/:key', async (req, res) => {
   try {
@@ -66,6 +73,14 @@ if (existsSync(distPath)) {
 }
 
 async function main() {
+  const PORT = Number(process.env.PORT) || 3001;
+
+  // Start server FIRST so health checks pass immediately
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 API server running on port ${PORT}`);
+  });
+
+  // Then initialize DB in background (non-blocking)
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS waqf_store (
@@ -77,11 +92,6 @@ async function main() {
   } catch (e) {
     console.error('❌ Database init failed:', e.message);
   }
-
-  const PORT = Number(process.env.PORT) || 3001;
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 API server running on port ${PORT}`);
-  });
 }
 
 main().catch(console.error);
