@@ -60,7 +60,7 @@ app.delete('/api/reset', async (req, res) => {
 });
 
 if (existsSync(distPath)) {
-  app.get('/{*path}', (req, res) => {
+  app.use((req, res) => {
     res.sendFile(path.join(distPath, 'index.html'));
   });
 }
