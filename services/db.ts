@@ -215,6 +215,10 @@ export const dbReady: Promise<void> = (async () => {
         cache[key] = d;
         try { localStorage.setItem(key, JSON.stringify(d)); } catch (e) {}
         if (key === DB_KEYS.INSTITUTIONS) hasServerData = true;
+      } else if (Array.isArray(d) && d.length === 0 && key === DB_KEYS.ACCOUNTS) {
+        // Server has no accounts — clear stale localStorage so initAccounts regenerates fresh
+        localStorage.removeItem(key);
+        delete cache[key];
       }
     });
 
@@ -340,13 +344,16 @@ export const initAccounts = () => {
   const insts = getInstitutions();
   const existingIds = new Set(existing.map(a => a.institution_id));
   const newAccounts: InstitutionAccount[] = [...existing];
-  let counter = existing.length + 1;
+  // Start counter from the highest existing code number + 1
+  let counter = existing.length > 0
+    ? Math.max(...existing.map(a => parseInt(a.login_code.replace('WQ', '')) || 0)) + 1
+    : 1;
   for (const inst of insts) {
     if (!existingIds.has(inst.id)) {
       newAccounts.push({
         institution_id: inst.id,
         login_code: `WQ${String(counter).padStart(3, '0')}`,
-        password: String(1000 + counter).slice(1),
+        password: '1234',
       });
       counter++;
     }
