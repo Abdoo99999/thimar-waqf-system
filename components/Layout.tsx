@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Building2, ClipboardCheck, Scale, FileBarChart, Menu, X, ShieldAlert, Settings, LogOut, Lock, Send, Inbox, CheckCircle, RotateCcw, Landmark, RefreshCw, AlertTriangle } from 'lucide-react';
-import { getSettings, getInstitutionProgress, getPendingEvaluationsCount, getEvaluationByInstAndYear, saveEvaluation } from '../services/db';
+import { LayoutDashboard, Building2, ClipboardCheck, Scale, FileBarChart, Menu, X, ShieldAlert, Settings, LogOut, Lock, Send, Inbox, CheckCircle, RotateCcw, Landmark, RefreshCw, AlertTriangle, MessageSquarePlus, MessageSquare, KeyRound } from 'lucide-react';
+import { getSettings, getInstitutionProgress, getPendingEvaluationsCount, getEvaluationByInstAndYear, saveEvaluation, getUnreadFeedbackCount } from '../services/db';
 import { CURRENT_YEAR } from '../constants';
 import { useUi } from '../contexts/UiContext';
 
@@ -186,6 +186,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Force re-calculation on location change to keep locks updated
   const progress = getInstitutionProgress(currentWaqfId);
   const pendingCount = role === 'admin' ? getPendingEvaluationsCount() : 0;
+  const unreadFeedback = role === 'admin' ? getUnreadFeedbackCount() : 0;
 
   useEffect(() => {
     // Apply Dark Mode
@@ -217,16 +218,16 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const allNavItems = [
     { to: '/', icon: LayoutDashboard, label: 'الرئيسية (القيادة)', roles: ['admin'] },
     { to: '/approval-requests', icon: Inbox, label: 'طلبات الاعتماد', roles: ['admin'], badge: pendingCount },
+    { to: '/system-feedback', icon: MessageSquare, label: 'ملاحظات النظام', roles: ['admin'], badge: unreadFeedback },
     { to: '/institutions', icon: Building2, label: 'بيانات المؤسسة', roles: ['admin', 'user'] },
-    // NEW MODULE: Financial Reports (Placed between Institutions and Evaluation)
     { to: '/financial-reports', icon: Landmark, label: 'القوائم المالية', roles: ['admin', 'user'] },
     { to: '/evaluation', icon: ClipboardCheck, label: 'الأداء المؤسسي', roles: ['admin', 'user'] },
     { to: '/compliance', icon: Scale, label: 'الامتثال والمخاطر', roles: ['admin', 'user'] },
     { to: '/improvements', icon: ShieldAlert, label: 'خطة التحسين', roles: ['admin', 'user'] },
     { to: '/reports', icon: FileBarChart, label: 'النتائج والتقارير', roles: ['admin'] },
     { to: '/settings', icon: Settings, label: 'إعدادات النظام', roles: ['admin'] },
-    // New User Route
     { to: '/review-submit', icon: Send, label: 'المراجعة والإرسال', roles: ['user'] },
+    { to: '/feedback', icon: MessageSquarePlus, label: 'إبداء ملاحظة على النظام', roles: ['user'] },
   ];
 
   // Filter based on current role

@@ -74,6 +74,8 @@ export const UiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     };
 
     const setWaqfContext = (id: string) => {
+        // Institution users: once set, cannot change to a different institution
+        if (role === 'user' && currentWaqfId && id !== currentWaqfId) return;
         localStorage.setItem('currentWaqfContext', id);
         setCurrentWaqfId(id);
     };

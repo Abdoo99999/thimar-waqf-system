@@ -1,5 +1,5 @@
 
-import { Institution, Indicator, Evaluation, Response, ComplianceRecord, ImprovementItem, RiskRegisterItem, FinancialRecord } from '../types';
+import { Institution, Indicator, Evaluation, Response, ComplianceRecord, ImprovementItem, RiskRegisterItem, FinancialRecord, InstitutionAccount, SystemFeedback } from '../types';
 import { DEFAULT_INDICATORS, CURRENT_YEAR, SEEDED_INSTITUTIONS, GOVERNORATES } from '../constants';
 
 const DB_KEYS = {
@@ -12,7 +12,9 @@ const DB_KEYS = {
   IMPROVEMENTS: 'waqf_improvements',
   RISKS: 'waqf_risks',
   FINANCIALS: 'waqf_financials',
-  SETTINGS: 'waqf_settings'
+  SETTINGS: 'waqf_settings',
+  ACCOUNTS: 'waqf_accounts',
+  FEEDBACK: 'waqf_feedback'
 };
 
 const API = '/api';
@@ -228,9 +230,12 @@ export const dbReady: Promise<void> = (async () => {
       initializeDatabase();
     }
 
+    initAccounts();
+
   } catch (e) {
     console.warn('[DB] Server unavailable, falling back to localStorage:', e);
     initializeDatabase();
+    initAccounts();
   }
 })();
 
@@ -325,7 +330,51 @@ export const deleteRisk = (id: string) => save(DB_KEYS.RISKS, data<RiskRegisterI
 export const getImprovements = (id: string) => data<ImprovementItem>(DB_KEYS.IMPROVEMENTS).filter(i => i.evaluation_id === id);
 export const saveImprovement = (i: ImprovementItem) => { const l = data<ImprovementItem>(DB_KEYS.IMPROVEMENTS); const x = l.findIndex(z => z.id === i.id); if (x >= 0) l[x] = i; else l.push(i); save(DB_KEYS.IMPROVEMENTS, l); };
 export const deleteImprovement = (id: string) => save(DB_KEYS.IMPROVEMENTS, data<ImprovementItem>(DB_KEYS.IMPROVEMENTS).filter(x => x.id !== id));
-export const getSettings = () => { const s = localStorage.getItem(DB_KEYS.SETTINGS); return safeParse(s, { managerName: 'د. عبدالرحمن النوفلي', darkMode: false, orgName: 'وزارة الأوقاف والشؤون الدينية' }); };
+export const getSettings = () => { const s = localStorage.getItem(DB_KEYS.SETTINGS); return safeParse(s, { darkMode: false, orgName: 'وزارة الأوقاف والشؤون الدينية' }); };
+
+// ─── Institution Accounts ──────────────────────────────────────────────────
+export const getAccounts = (): InstitutionAccount[] => data<InstitutionAccount>(DB_KEYS.ACCOUNTS);
+
+export const initAccounts = () => {
+  const existing = data<InstitutionAccount>(DB_KEYS.ACCOUNTS);
+  const insts = getInstitutions();
+  const existingIds = new Set(existing.map(a => a.institution_id));
+  const newAccounts: InstitutionAccount[] = [...existing];
+  let counter = existing.length + 1;
+  for (const inst of insts) {
+    if (!existingIds.has(inst.id)) {
+      newAccounts.push({
+        institution_id: inst.id,
+        login_code: `WQ${String(counter).padStart(3, '0')}`,
+        password: String(1000 + counter).slice(1),
+      });
+      counter++;
+    }
+  }
+  if (newAccounts.length > existing.length) {
+    save(DB_KEYS.ACCOUNTS, newAccounts);
+  }
+};
+
+export const authenticateInstitution = (loginCode: string, password: string): Institution | null => {
+  const code = loginCode.trim().toUpperCase();
+  const account = getAccounts().find(a => a.login_code.toUpperCase() === code && a.password === password.trim());
+  if (!account) return null;
+  return getInstitutions().find(i => i.id === account.institution_id) ?? null;
+};
+
+// ─── System Feedback ───────────────────────────────────────────────────────
+export const getFeedback = (): SystemFeedback[] => data<SystemFeedback>(DB_KEYS.FEEDBACK);
+export const saveFeedback = (f: SystemFeedback) => {
+  const list = getFeedback();
+  list.push(f);
+  save(DB_KEYS.FEEDBACK, list);
+};
+export const markFeedbackRead = (id: string) => {
+  const list = getFeedback().map(f => f.id === id ? { ...f, is_read: true } : f);
+  save(DB_KEYS.FEEDBACK, list);
+};
+export const getUnreadFeedbackCount = () => getFeedback().filter(f => !f.is_read).length;
 export const saveSettings = (s: any) => {
   localStorage.setItem(DB_KEYS.SETTINGS, JSON.stringify(s));
   fetch(`${API}/${DB_KEYS.SETTINGS}`, {

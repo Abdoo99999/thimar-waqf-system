@@ -168,3 +168,23 @@ export interface ChartData {
   value: number;
   fill?: string;
 }
+
+export interface InstitutionAccount {
+  institution_id: string;
+  login_code: string;
+  password: string;
+}
+
+export type FeedbackCategory = 'اقتراح تطوير' | 'صعوبة استخدام' | 'خطأ تقني' | 'ملاحظة على الأسئلة' | 'أخرى';
+
+export interface SystemFeedback {
+  id: string;
+  institution_id: string;
+  institution_name: string;
+  category: FeedbackCategory;
+  page: string;
+  text: string;
+  image?: string;
+  submitted_at: string;
+  is_read?: boolean;
+}
