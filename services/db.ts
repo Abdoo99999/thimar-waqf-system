@@ -198,6 +198,22 @@ const initializeDatabase = () => {
 
 export const dbReady: Promise<void> = (async () => {
   try {
+    // First check if server is actually available
+    const serverAvailable = await fetch(`${API}/health`)
+      .then(r => r.ok)
+      .catch(() => false);
+
+    if (!serverAvailable) {
+      // Server offline (static deployment or dev without backend) — use localStorage only
+      console.warn('[DB] Server unavailable, using localStorage only');
+      if (!localStorage.getItem(DB_KEYS.INSTITUTIONS)) {
+        initializeDatabase();
+      }
+      initAccounts();
+      return;
+    }
+
+    // Server is available — sync data from server
     const collectionKeys = Object.values(DB_KEYS).filter(k => k !== DB_KEYS.SETTINGS);
 
     const responses = await Promise.all(
@@ -237,8 +253,10 @@ export const dbReady: Promise<void> = (async () => {
     initAccounts();
 
   } catch (e) {
-    console.warn('[DB] Server unavailable, falling back to localStorage:', e);
-    initializeDatabase();
+    console.warn('[DB] Error during DB init, falling back to localStorage:', e);
+    if (!localStorage.getItem(DB_KEYS.INSTITUTIONS)) {
+      initializeDatabase();
+    }
     initAccounts();
   }
 })();

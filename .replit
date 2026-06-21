@@ -58,6 +58,7 @@ localPort = 5001
 externalPort = 3001
 
 [deployment]
-deploymentTarget = "autoscale"
+deploymentTarget = "static"
 build = ["npm", "run", "build"]
 run = ["node", "server.js"]
+publicDir = "dist"
