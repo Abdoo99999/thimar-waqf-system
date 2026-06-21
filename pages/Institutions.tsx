@@ -617,6 +617,13 @@ const Institutions: React.FC = () => {
                                 <input type="number" disabled={isFormLocked} className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.employees_non_omani || ''} onChange={e => setFormData({...formData, employees_non_omani: Number(e.target.value)})} />
                             </div>
                         </div>
+                        <div className="group">
+                            <label className="block text-sm font-bold text-gray-700 mb-2">الموظفين المفرغين</label>
+                            <div className="relative">
+                                <Users className="absolute top-3 right-3 text-gray-400 group-focus-within:text-purple-600 transition-colors" size={18} />
+                                <input type="number" disabled={isFormLocked} className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.employees_seconded || ''} onChange={e => setFormData({...formData, employees_seconded: Number(e.target.value)})} />
+                            </div>
+                        </div>
                     </div>
                 </div>
 

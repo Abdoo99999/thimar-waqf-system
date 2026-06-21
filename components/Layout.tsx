@@ -286,7 +286,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </nav>
         <div className="absolute bottom-0 w-full p-4 border-t border-navy-800 text-xs text-gray-400 text-center">
           <p>{settings.orgName}</p>
-          <p className="mt-1 text-gold-500">تحت إشراف {settings.managerName}</p>
         </div>
       </aside>
 
@@ -333,7 +332,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           {/* Footer - Print Only */}
           <div className="hidden print:block fixed bottom-0 left-0 right-0 text-center p-4 border-t text-sm">
              <p>تم استخراج هذا التقرير آلياً من نظام تقييم المؤسسات الوقفية</p>
-             <p className="font-bold">تحت إشراف {settings.managerName}</p>
           </div>
         </main>
       </div>

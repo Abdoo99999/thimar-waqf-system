@@ -15,6 +15,7 @@ export interface Institution {
   capital_omr: number;
   employees_omani: number;
   employees_non_omani: number;
+  employees_seconded: number;
   contact_phone: string;
   email?: string;
   governorate?: string;
