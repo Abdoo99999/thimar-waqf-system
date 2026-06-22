@@ -94,7 +94,6 @@ const AppRoutes: React.FC = () => {
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
-        <Route path="/" element={<HomeRedirect />} />
         <Route path="/dashboard" element={<ProtectedRoute requiredRole="admin"><Dashboard /></ProtectedRoute>} />
         <Route path="/reports" element={<ProtectedRoute requiredRole="admin"><Reports /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute requiredRole="admin"><Settings /></ProtectedRoute>} />
@@ -159,6 +158,8 @@ const App: React.FC = () => {
       <UiProvider>
         <Router>
           <Routes>
+            {/* Institution login - outside Layout, no auth required */}
+            <Route path="/" element={<Login />} />
             {/* Admin login - outside Layout, no auth required */}
             <Route path="/admin-login" element={<AdminLogin />} />
             {/* All other routes use Layout */}
