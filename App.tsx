@@ -30,7 +30,7 @@ const PageLoader = () => (
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode; requiredRole?: 'admin' | 'user' }> = ({ children, requiredRole }) => {
   const { isAuthenticated, role } = useUi();
-  if (!isAuthenticated) return <Login />;
+  if (!isAuthenticated) return <Navigate to="/" replace />;
   if (requiredRole === 'admin' && role !== 'admin') return <Navigate to="/institutions" replace />;
   if (requiredRole === 'user' && role !== 'user') return <Navigate to="/" replace />;
   return <>{children}</>;
