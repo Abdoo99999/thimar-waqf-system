@@ -410,6 +410,55 @@ export const saveSettings = (s: any) => {
   window.dispatchEvent(new Event('settingsChanged'));
 };
 
+// ─── Reset Institution (إعادة تعيين المؤسسة للوضع الأولي) ─────────────────
+export const resetInstitution = (id: string) => {
+  // 1. إعادة الملف الشخصي إلى غير مكتمل
+  const insts = getInstitutions();
+  const inst = insts.find(i => i.id === id);
+  if (inst) {
+    const reset: Institution = {
+      ...inst,
+      profile_completed: false,
+      contact_phone: '',
+      email: '',
+      establishment_date: '',
+      license_number: '',
+      manager_name: '',
+      declaration_date: undefined,
+      commercial_record_number: undefined,
+      establishment_decision_doc: undefined,
+      documents: [],
+      capital_omr: 0,
+      employees_omani: 0,
+      employees_non_omani: 0,
+      employees_seconded: 0,
+    };
+    const updated = insts.map(i => i.id === id ? reset : i);
+    save(DB_KEYS.INSTITUTIONS, updated);
+  }
+
+  // 2. حذف السجلات المالية
+  const financials = data<FinancialRecord>(DB_KEYS.FINANCIALS).filter(f => f.institution_id !== id);
+  save(DB_KEYS.FINANCIALS, financials);
+
+  // 3. حذف تقييمات المؤسسة + الردود المرتبطة بها
+  const allEvals = data<Evaluation>(DB_KEYS.EVALUATIONS);
+  const instEvalIds = new Set(allEvals.filter(e => e.institution_id === id).map(e => e.id));
+  save(DB_KEYS.EVALUATIONS, allEvals.filter(e => e.institution_id !== id));
+  const responses = data<Response>(DB_KEYS.RESPONSES).filter(r => !instEvalIds.has(r.evaluation_id));
+  save(DB_KEYS.RESPONSES, responses);
+  const improvements = data<ImprovementItem>(DB_KEYS.IMPROVEMENTS).filter(i => !instEvalIds.has(i.evaluation_id));
+  save(DB_KEYS.IMPROVEMENTS, improvements);
+
+  // 4. حذف سجلات الامتثال
+  const compliance = data<ComplianceRecord>(DB_KEYS.COMPLIANCE).filter(c => c.institution_id !== id);
+  save(DB_KEYS.COMPLIANCE, compliance);
+
+  // 5. حذف سجل المخاطر
+  const risks = data<RiskRegisterItem>(DB_KEYS.RISKS).filter(r => r.institution_id !== id);
+  save(DB_KEYS.RISKS, risks);
+};
+
 export const getInstitutionProgress = (id: string | null) => {
   if (!id) return { dataComplete: false, financialsDone: false, evalFinalized: false, complianceDone: false, workflowStatus: 'draft' as const, isLocked: false };
   const i = getInstitutions().find(x => x.id === id);

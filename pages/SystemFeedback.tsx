@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { getFeedback, markFeedbackRead, getAccounts, getInstitutions } from '../services/db';
+import { getFeedback, markFeedbackRead, getAccounts, getInstitutions, resetInstitution } from '../services/db';
 import { SystemFeedback, InstitutionAccount, Institution } from '../types';
-import { MessageSquare, Eye, KeyRound, Copy, CheckCircle, Filter } from 'lucide-react';
+import { MessageSquare, Eye, KeyRound, Copy, CheckCircle, Filter, RotateCcw, AlertTriangle } from 'lucide-react';
 
 const CATEGORY_COLORS: Record<string, string> = {
   'اقتراح تطوير': 'bg-blue-100 text-blue-700',
@@ -20,6 +20,8 @@ const SystemFeedbackPage: React.FC = () => {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [filterCat, setFilterCat] = useState('الكل');
+  const [confirmResetId, setConfirmResetId] = useState<string | null>(null);
+  const [resetDone, setResetDone] = useState<string | null>(null);
 
   useEffect(() => {
     setFeedbackList([...getFeedback()].reverse());
@@ -40,6 +42,14 @@ const SystemFeedbackPage: React.FC = () => {
   };
 
   const getInstName = (instId: string) => institutions.find(i => i.id === instId)?.name ?? 'غير محدد';
+
+  const handleReset = (instId: string) => {
+    resetInstitution(instId);
+    setInstitutions(getInstitutions());
+    setConfirmResetId(null);
+    setResetDone(instId);
+    setTimeout(() => setResetDone(null), 2500);
+  };
 
   const categories = ['الكل', 'اقتراح تطوير', 'صعوبة استخدام', 'خطأ تقني', 'ملاحظة على الأسئلة', 'أخرى'];
   const filtered = filterCat === 'الكل' ? feedbackList : feedbackList.filter(f => f.category === filterCat);
@@ -166,11 +176,12 @@ const SystemFeedbackPage: React.FC = () => {
                   <th className="px-4 py-3 text-right font-bold">اسم المؤسسة</th>
                   <th className="px-4 py-3 text-center font-bold">رمز الدخول</th>
                   <th className="px-4 py-3 text-center font-bold">كلمة المرور</th>
+                  <th className="px-4 py-3 text-center font-bold">إعادة التعيين</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {accounts.map((acc, idx) => (
-                  <tr key={acc.institution_id} className="hover:bg-gray-50 transition-colors">
+                  <tr key={acc.institution_id} className={`hover:bg-gray-50 transition-colors ${resetDone === acc.institution_id ? 'bg-green-50' : ''}`}>
                     <td className="px-4 py-3 text-gray-400 text-xs">{idx + 1}</td>
                     <td className="px-4 py-3 font-medium text-navy-900 max-w-xs truncate">{getInstName(acc.institution_id)}</td>
                     <td className="px-4 py-3 text-center">
@@ -189,11 +200,69 @@ const SystemFeedbackPage: React.FC = () => {
                         </button>
                       </div>
                     </td>
+                    <td className="px-4 py-3 text-center">
+                      {resetDone === acc.institution_id ? (
+                        <span className="flex items-center justify-center gap-1 text-green-600 text-xs font-bold">
+                          <CheckCircle size={14} /> تم الإعادة
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmResetId(acc.institution_id)}
+                          title="إعادة تعيين بيانات المؤسسة"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 transition-colors"
+                        >
+                          <RotateCcw size={13} /> إعادة تعيين
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+
+          {/* نافذة تأكيد الإعادة */}
+          {confirmResetId && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setConfirmResetId(null)}>
+              <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" dir="rtl" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center shrink-0">
+                    <AlertTriangle size={24} className="text-orange-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">تأكيد إعادة التعيين</h3>
+                    <p className="text-sm text-gray-500">{getInstName(confirmResetId)}</p>
+                  </div>
+                </div>
+                <p className="text-gray-700 text-sm mb-2 leading-relaxed">
+                  سيتم مسح جميع بيانات هذه المؤسسة بشكل كامل:
+                </p>
+                <ul className="text-sm text-gray-600 mb-5 space-y-1 pr-4 list-disc">
+                  <li>بيانات الملف التعريفي</li>
+                  <li>القوائم المالية</li>
+                  <li>الأداء المؤسسي والاستجابات</li>
+                  <li>الامتثال وسجل المخاطر</li>
+                </ul>
+                <p className="text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 mb-5">
+                  ستتمكن المؤسسة من تجربة النظام من البداية. هذا الإجراء لا يمكن التراجع عنه.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => handleReset(confirmResetId)}
+                    className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2"
+                  >
+                    <RotateCcw size={16} /> نعم، إعادة التعيين
+                  </button>
+                  <button
+                    onClick={() => setConfirmResetId(null)}
+                    className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl transition-colors"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
