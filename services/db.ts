@@ -92,12 +92,20 @@ const safeParse = <T>(json: string | null, fallback: T): T => {
     try { return JSON.parse(json); } catch (e) { return fallback; }
 };
 
-const data = <T>(key: string): T[] => {
-  if (cache[key]) return cache[key];
+const data = <T>(key: string, forceRefresh = false): T[] => {
+  if (!forceRefresh && cache[key]) return cache[key];
   const stored = localStorage.getItem(key);
   const parsed = safeParse<T[]>(stored, []);
   cache[key] = parsed;
   return parsed;
+};
+
+export const clearCache = (...keys: string[]) => {
+  if (keys.length === 0) {
+    Object.keys(cache).forEach(k => delete cache[k]);
+  } else {
+    keys.forEach(k => delete cache[k]);
+  }
 };
 
 const save = <T>(key: string, items: T[]) => {
