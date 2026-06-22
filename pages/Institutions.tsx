@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getInstitutions, saveInstitution, deleteInstitution, generateId, getInstitutionProgress } from '../services/db';
+import { getInstitutions, saveInstitution, deleteInstitution, generateId, getInstitutionProgress, initAccounts, getAccounts } from '../services/db';
 import { Institution, InstitutionType, InstitutionDocument } from '../types';
 import { GOVERNORATES, OMAN_LOCATIONS } from '../constants';
 import { Plus, Search, Edit2, Trash2, X, FileText, UploadCloud, Calendar, Hash, User, CheckCircle2, Phone, AlertCircle, Building, AlertTriangle, Briefcase, MapPin, Mail, DollarSign, Users, LayoutGrid, ChevronLeft, ChevronRight, Lock, Eye } from 'lucide-react';
@@ -66,59 +66,78 @@ const Institutions: React.FC = () => {
         return;
     }
 
-    // التحقق الصارم من جميع الحقول
-    if (
-        !formData.name || 
-        !formData.type || 
-        formData.capital_omr === undefined || 
-        !formData.contact_phone || 
-        !formData.email || 
-        !formData.governorate || 
-        !formData.wilayat || 
-        !formData.establishment_date || 
-        !formData.license_number || 
-        !formData.manager_name
-    ) {
-        showToast('عذراً، جميع الحقول إجبارية بما فيها رقم الهاتف وتاريخ المجلس.', 'error');
+    const isNew = !formData.id;
+
+    if (role === 'admin') {
+      // للأدمن: يكفي اسم المؤسسة فقط — المؤسسة ستكمل بياناتها بنفسها
+      if (!formData.name?.trim()) {
+        showToast('يرجى إدخال اسم المؤسسة على الأقل.', 'error');
         return;
+      }
+    } else {
+      // للمؤسسة: التحقق الصارم من جميع الحقول
+      if (
+          !formData.name || 
+          !formData.type || 
+          formData.capital_omr === undefined || 
+          !formData.contact_phone || 
+          !formData.email || 
+          !formData.governorate || 
+          !formData.wilayat || 
+          !formData.establishment_date || 
+          !formData.license_number || 
+          !formData.manager_name
+      ) {
+          showToast('عذراً، جميع الحقول إجبارية بما فيها رقم الهاتف وتاريخ المجلس.', 'error');
+          return;
+      }
     }
 
     const newInst: Institution = {
       id: formData.id || generateId(),
-      name: formData.name,
-      type: (formData.type as InstitutionType),
-      capital_omr: Number(formData.capital_omr),
+      name: formData.name!,
+      type: (formData.type as InstitutionType) || 'وقفية عامة',
+      capital_omr: Number(formData.capital_omr) || 0,
       employees_omani: Number(formData.employees_omani) || 0,
       employees_non_omani: Number(formData.employees_non_omani) || 0,
-      contact_phone: formData.contact_phone,
-      email: formData.email,
-      governorate: formData.governorate,
-      wilayat: formData.wilayat,
-      
-      establishment_date: formData.establishment_date,
-      license_number: formData.license_number,
-      manager_name: formData.manager_name,
+      employees_seconded: Number(formData.employees_seconded) || 0,
+      contact_phone: formData.contact_phone || '',
+      email: formData.email || '',
+      governorate: formData.governorate || '',
+      wilayat: formData.wilayat || '',
+      establishment_date: formData.establishment_date || '',
+      license_number: formData.license_number || '',
+      manager_name: formData.manager_name || '',
       declaration_date: formData.declaration_date,
       commercial_record_number: formData.commercial_record_number,
       establishment_decision_doc: formData.establishment_decision_doc,
-
-      // IMPORTANT: Mark profile as completed on save
-      profile_completed: true,
-
+      // الأدمن يضيف المؤسسة كـ"غير مكتملة" — المؤسسة ستكملها بنفسها
+      profile_completed: role === 'admin' ? false : true,
       documents: formData.documents || [],
       created_at: formData.created_at || new Date().toISOString(),
     };
 
     saveInstitution(newInst);
+
+    // إذا أضاف الأدمن مؤسسة جديدة، نولّد رمز دخول تلقائياً
+    if (role === 'admin' && isNew) {
+      initAccounts();
+      const accounts = getAccounts();
+      const newAccount = accounts.find(a => a.institution_id === newInst.id);
+      if (newAccount) {
+        showToast(`✅ تم إضافة المؤسسة. بيانات الدخول: رمز "${newAccount.login_code}" / كلمة المرور "1234"`, 'success');
+      } else {
+        showToast('تم إضافة المؤسسة بنجاح وسيظهر رمز دخولها في قائمة الحسابات.', 'success');
+      }
+    }
+
     setList(getInstitutions());
     setShowForm(false);
     setFormData({});
     
-    // تحديث السياق وإعطاء صلاحية الدخول
+    // تحديث السياق وإعطاء صلاحية الدخول للمؤسسة
     if (role === 'user') {
         setWaqfContext(newInst.id);
-        
-        // Fix: Use navigate instead of window.reload to prevent grey screen crash
         if (isCurrentProfileIncomplete) {
             showToast('تم حفظ البيانات. جاري الانتقال للخطوة التالية...', 'success');
             setTimeout(() => {
@@ -127,7 +146,7 @@ const Institutions: React.FC = () => {
         } else {
             showToast('تم حفظ بيانات المؤسسة بنجاح', 'success');
         }
-    } else {
+    } else if (role !== 'admin' || !isNew) {
         showToast('تم حفظ بيانات المؤسسة بنجاح', 'success');
     }
   };
@@ -475,7 +494,7 @@ const Institutions: React.FC = () => {
                             <label className="block text-sm font-bold text-gray-700 mb-2">رقم القرار *</label>
                             <div className="relative">
                                 <Hash className="absolute top-3 right-3 text-gray-400 group-focus-within:text-teal-600 transition-colors" size={18} />
-                                <input required type="text" disabled={isFormLocked} placeholder="مثال: 10223" className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.license_number || ''} onChange={e => setFormData({...formData, license_number: e.target.value})} />
+                                <input required={role !== 'admin'} type="text" disabled={isFormLocked} placeholder="مثال: 10223" className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.license_number || ''} onChange={e => setFormData({...formData, license_number: e.target.value})} />
                             </div>
                         </div>
 
@@ -502,7 +521,7 @@ const Institutions: React.FC = () => {
                             <label className="block text-sm font-bold text-gray-700 mb-2">تاريخ تأسيس المجلس *</label>
                             <div className="relative">
                                 <Calendar className="absolute top-3 right-3 text-gray-400 group-focus-within:text-teal-600 transition-colors" size={18} />
-                                <input required type="date" disabled={isFormLocked} className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.establishment_date || ''} onChange={handleDateChange} />
+                                <input required={role !== 'admin'} type="date" disabled={isFormLocked} className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.establishment_date || ''} onChange={handleDateChange} />
                             </div>
                         </div>
 
@@ -532,7 +551,7 @@ const Institutions: React.FC = () => {
                             <label className="block text-sm font-bold text-gray-700 mb-2">مدير المؤسسة *</label>
                             <div className="relative">
                                 <User className="absolute top-3 right-3 text-gray-400 group-focus-within:text-blue-600 transition-colors" size={18} />
-                                <input required type="text" disabled={isFormLocked} className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.manager_name || ''} onChange={e => setFormData({...formData, manager_name: e.target.value})} />
+                                <input required={role !== 'admin'} type="text" disabled={isFormLocked} className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.manager_name || ''} onChange={e => setFormData({...formData, manager_name: e.target.value})} />
                             </div>
                         </div>
                         
@@ -541,7 +560,7 @@ const Institutions: React.FC = () => {
                             <label className="block text-sm font-bold text-gray-700 mb-2">رقم الهاتف *</label>
                             <div className="relative">
                                 <Phone className="absolute top-3 right-3 text-gray-400 group-focus-within:text-blue-600 transition-colors" size={18} />
-                                <input required type="tel" disabled={isFormLocked} placeholder="968xxxxxxxx" className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.contact_phone || ''} onChange={e => setFormData({...formData, contact_phone: e.target.value})} />
+                                <input required={role !== 'admin'} type="tel" disabled={isFormLocked} placeholder="968xxxxxxxx" className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.contact_phone || ''} onChange={e => setFormData({...formData, contact_phone: e.target.value})} />
                             </div>
                         </div>
 
@@ -550,7 +569,7 @@ const Institutions: React.FC = () => {
                             <label className="block text-sm font-bold text-gray-700 mb-2">البريد الإلكتروني *</label>
                             <div className="relative">
                                 <Mail className="absolute top-3 right-3 text-gray-400 group-focus-within:text-blue-600 transition-colors" size={18} />
-                                <input required type="email" disabled={isFormLocked} className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} />
+                                <input required={role !== 'admin'} type="email" disabled={isFormLocked} className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} />
                             </div>
                         </div>
 
@@ -559,7 +578,7 @@ const Institutions: React.FC = () => {
                             <label className="block text-sm font-bold text-gray-700 mb-2">المحافظة *</label>
                             <div className="relative">
                                 <MapPin className="absolute top-3 right-3 text-gray-400 group-focus-within:text-blue-600 transition-colors" size={18} />
-                                <select required disabled={isFormLocked} className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none bg-white disabled:bg-gray-100 disabled:text-gray-500" value={formData.governorate || ''} onChange={e => setFormData({...formData, governorate: e.target.value, wilayat: ''})}>
+                                <select required={role !== 'admin'} disabled={isFormLocked} className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none bg-white disabled:bg-gray-100 disabled:text-gray-500" value={formData.governorate || ''} onChange={e => setFormData({...formData, governorate: e.target.value, wilayat: ''})}>
                                     <option value="">اختر...</option>
                                     {GOVERNORATES.map(g => <option key={g} value={g}>{g}</option>)}
                                 </select>
@@ -572,7 +591,7 @@ const Institutions: React.FC = () => {
                             <div className="relative">
                                 <MapPin className="absolute top-3 right-3 text-gray-400 group-focus-within:text-blue-600 transition-colors" size={18} />
                                 <select 
-                                    required 
+                                    required={role !== 'admin'}
                                     className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none bg-white disabled:bg-gray-100 disabled:text-gray-500" 
                                     value={formData.wilayat || ''} 
                                     onChange={e => setFormData({...formData, wilayat: e.target.value})} 
@@ -600,7 +619,7 @@ const Institutions: React.FC = () => {
                             <label className="block text-sm font-bold text-gray-700 mb-2">رأس المال (ر.ع) *</label>
                             <div className="relative">
                                 <DollarSign className="absolute top-3 right-3 text-gray-400 group-focus-within:text-purple-600 transition-colors" size={18} />
-                                <input type="number" required disabled={isFormLocked} className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.capital_omr || ''} onChange={e => setFormData({...formData, capital_omr: Number(e.target.value)})} />
+                                <input type="number" required={role !== 'admin'} disabled={isFormLocked} className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.capital_omr || ''} onChange={e => setFormData({...formData, capital_omr: Number(e.target.value)})} />
                             </div>
                         </div>
                         <div className="group">
