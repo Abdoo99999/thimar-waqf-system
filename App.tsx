@@ -85,11 +85,9 @@ const SequentialRoute: React.FC<{
   return <>{children}</>;
 };
 
+// الرابط الجذري يُظهر دائماً صفحة تسجيل دخول المؤسسات — بغض النظر عن أي جلسة سابقة
 const HomeRedirect: React.FC = () => {
-  const { isAuthenticated, role } = useUi();
-  if (!isAuthenticated) return <Login />;
-  if (role === 'admin') return <Dashboard />;
-  return <Navigate to="/institutions" replace />;
+  return <Login />;
 };
 
 const AppRoutes: React.FC = () => {
@@ -97,6 +95,7 @@ const AppRoutes: React.FC = () => {
     <Suspense fallback={<PageLoader />}>
       <Routes>
         <Route path="/" element={<HomeRedirect />} />
+        <Route path="/dashboard" element={<ProtectedRoute requiredRole="admin"><Dashboard /></ProtectedRoute>} />
         <Route path="/reports" element={<ProtectedRoute requiredRole="admin"><Reports /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute requiredRole="admin"><Settings /></ProtectedRoute>} />
         <Route path="/approval-requests" element={<ProtectedRoute requiredRole="admin"><ApprovalRequests /></ProtectedRoute>} />

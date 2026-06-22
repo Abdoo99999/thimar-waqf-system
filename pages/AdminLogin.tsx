@@ -12,7 +12,7 @@ const AdminLogin: React.FC = () => {
 
   useEffect(() => {
     if (isAuthenticated && role === 'admin') {
-      navigate('/', { replace: true });
+      navigate('/dashboard', { replace: true });
     }
   }, [isAuthenticated, role, navigate]);
 
@@ -22,7 +22,7 @@ const AdminLogin: React.FC = () => {
       setWaqfContext('');
       login('مدير النظام', 'admin');
       showToast('مرحباً بك، مدير النظام', 'success');
-      navigate('/', { replace: true });
+      navigate('/dashboard', { replace: true });
     } else {
       showToast('بيانات الدخول غير صحيحة', 'error');
     }

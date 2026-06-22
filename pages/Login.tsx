@@ -1,11 +1,13 @@
 
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useUi } from '../contexts/UiContext';
 import { authenticateInstitution } from '../services/db';
 import { Lock, Building2, ArrowRight, KeyRound, AlertTriangle } from 'lucide-react';
 
 const Login: React.FC = () => {
   const { login, showToast, setWaqfContext } = useUi();
+  const navigate = useNavigate();
   const [loginCode, setLoginCode] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -20,6 +22,7 @@ const Login: React.FC = () => {
         setWaqfContext(institution.id);
         login(institution.name, 'user');
         showToast(`مرحباً، ${institution.name}`, 'success');
+        navigate('/institutions', { replace: true });
       } else {
         showToast('رمز الدخول أو كلمة المرور غير صحيحة', 'error');
       }
