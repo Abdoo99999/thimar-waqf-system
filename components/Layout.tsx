@@ -18,7 +18,7 @@ const isRouteLocked = (path: string, role: string | null, progress: any) => {
         // - Review/Submit: To see status message.
         // - Improvements: To work on action plan.
         // - Reports: To view results (Read Only).
-        const allowedPaths = ['/review-submit', '/improvements', '/reports'];
+        const allowedPaths = ['/review-submit', '/improvements', '/reports', '/feedback'];
         
         if (allowedPaths.includes(path)) {
             return false; // Allowed

@@ -1,9 +1,9 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { useUi } from '../contexts/UiContext';
 import { saveFeedback, generateId, getInstitutions } from '../services/db';
 import { SystemFeedback } from '../types';
-import { MessageSquarePlus, Send, Image, X, CheckCircle } from 'lucide-react';
+import { MessageSquarePlus, Send, Image, X, CheckCircle2 } from 'lucide-react';
 
 const PAGES = [
   'بيانات المؤسسة',
@@ -19,19 +19,21 @@ const PAGES = [
 const Feedback: React.FC = () => {
   const { currentWaqfId, user } = useUi();
   const [page, setPage] = useState(PAGES[0]);
-  const [text, setText] = useState('');
-  const [image, setImage] = useState<string | undefined>(undefined);
-  const [submitted, setSubmitted] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [images, setImages] = useState<Record<string, string | undefined>>({});
+  const [sentPages, setSentPages] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
-  const textRef = useRef('');
 
-  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    textRef.current = e.target.value;
-    setText(e.target.value);
-  };
+  const currentText = drafts[page] || '';
+  const currentImage = images[page];
+  const isSent = sentPages.has(page);
 
   const handlePageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setPage(e.target.value);
+  };
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setDrafts(prev => ({ ...prev, [page]: e.target.value }));
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -42,14 +44,17 @@ const Feedback: React.FC = () => {
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => setImage(reader.result as string);
+    reader.onload = () => setImages(prev => ({ ...prev, [page]: reader.result as string }));
     reader.readAsDataURL(file);
+  };
+
+  const handleRemoveImage = () => {
+    setImages(prev => ({ ...prev, [page]: undefined }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const currentText = textRef.current.trim() || text.trim();
-    if (!currentText) return;
+    if (!currentText.trim()) return;
     setSubmitting(true);
 
     const inst = currentWaqfId
@@ -62,8 +67,8 @@ const Feedback: React.FC = () => {
       institution_name: inst?.name ?? user ?? 'غير محدد',
       category: 'أخرى',
       page,
-      text: currentText,
-      image,
+      text: currentText.trim(),
+      image: currentImage,
       submitted_at: new Date().toISOString(),
       is_read: false,
     };
@@ -72,29 +77,11 @@ const Feedback: React.FC = () => {
 
     setTimeout(() => {
       setSubmitting(false);
-      setSubmitted(true);
-    }, 600);
+      setSentPages(prev => new Set([...prev, page]));
+      setDrafts(prev => ({ ...prev, [page]: '' }));
+      setImages(prev => ({ ...prev, [page]: undefined }));
+    }, 500);
   };
-
-  if (submitted) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-8 animate-fadeIn" dir="rtl">
-        <div className="bg-teal-50 p-6 rounded-full mb-6">
-          <CheckCircle size={56} className="text-teal-600" />
-        </div>
-        <h2 className="text-2xl font-bold text-navy-900 mb-3">شكراً لك!</h2>
-        <p className="text-gray-500 max-w-md mb-6">
-          تم إرسال ملاحظتك بنجاح إلى إدارة النظام. سنأخذها بعين الاعتبار في التحسينات القادمة.
-        </p>
-        <button
-          onClick={() => { setSubmitted(false); setText(''); textRef.current = ''; setImage(undefined); }}
-          className="bg-teal-600 text-white px-6 py-2 rounded-lg hover:bg-teal-700 font-bold transition-colors"
-        >
-          إرسال ملاحظة أخرى
-        </button>
-      </div>
-    );
-  }
 
   return (
     <div className="max-w-2xl mx-auto p-4 lg:p-8" dir="rtl">
@@ -105,7 +92,7 @@ const Feedback: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-navy-900">إبداء ملاحظة على النظام</h1>
           <p className="text-gray-500 text-sm mt-1">
-            ملاحظاتك تساعدنا على تحسين النظام — شكراً لمشاركتنا رأيك
+            يمكنك إرسال ملاحظة مستقلة لكل قسم من الأقسام
           </p>
         </div>
       </div>
@@ -114,38 +101,71 @@ const Feedback: React.FC = () => {
         جميع الملاحظات تصل مباشرة إلى فريق إدارة النظام فقط، ولن تؤثر على بيانات مؤسستك.
       </div>
 
+      {/* Sections status row */}
+      {sentPages.size > 0 && (
+        <div className="flex flex-wrap gap-2 mb-5">
+          {[...sentPages].map(p => (
+            <span key={p} className="flex items-center gap-1 bg-teal-50 border border-teal-200 text-teal-700 text-xs font-bold px-3 py-1 rounded-full">
+              <CheckCircle2 size={13} />
+              {p}
+            </span>
+          ))}
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-5">
 
+        {/* Page selector */}
         <div>
-          <label className="block text-sm font-bold text-gray-700 mb-2">الصفحة أو النافذة المتعلقة *</label>
-          <select
-            value={page}
-            onChange={handlePageChange}
-            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none bg-white"
-          >
-            {PAGES.map(p => <option key={p} value={p}>{p}</option>)}
-          </select>
+          <label className="block text-sm font-bold text-gray-700 mb-2">
+            القسم المتعلق بالملاحظة *
+          </label>
+          <div className="relative">
+            <select
+              value={page}
+              onChange={handlePageChange}
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none bg-white appearance-none"
+            >
+              {PAGES.map(p => (
+                <option key={p} value={p}>
+                  {p}{sentPages.has(p) ? ' ✓' : ''}
+                </option>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center">
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+          {isSent && (
+            <p className="mt-1 text-xs text-teal-600 font-medium flex items-center gap-1">
+              <CheckCircle2 size={13} /> تم إرسال ملاحظة لهذا القسم — يمكنك كتابة ملاحظة جديدة
+            </p>
+          )}
         </div>
 
+        {/* Text area */}
         <div>
           <label className="block text-sm font-bold text-gray-700 mb-2">نص الملاحظة *</label>
           <textarea
             rows={6}
-            value={text}
+            value={currentText}
             onChange={handleTextChange}
-            placeholder="اكتب ملاحظتك أو اقتراحك بالتفصيل هنا..."
+            placeholder={`اكتب ملاحظتك حول "${page}" هنا...`}
             className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none resize-none"
           />
         </div>
 
+        {/* Image upload */}
         <div>
           <label className="block text-sm font-bold text-gray-700 mb-2">صورة توضيحية (اختياري)</label>
-          {image ? (
+          {currentImage ? (
             <div className="relative inline-block">
-              <img src={image} alt="المرفق" className="max-h-40 rounded-lg border border-gray-200 shadow-sm" />
+              <img src={currentImage} alt="المرفق" className="max-h-40 rounded-lg border border-gray-200 shadow-sm" />
               <button
                 type="button"
-                onClick={() => setImage(undefined)}
+                onClick={handleRemoveImage}
                 className="absolute -top-2 -left-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600 transition-colors"
               >
                 <X size={14} />
@@ -162,13 +182,13 @@ const Feedback: React.FC = () => {
 
         <button
           type="submit"
-          disabled={submitting || !text.trim()}
+          disabled={submitting || !currentText.trim()}
           className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-gray-300 text-white font-bold py-3 rounded-lg shadow flex items-center justify-center gap-2 transition-colors active:scale-95"
         >
           {submitting ? (
             <span className="animate-pulse">جاري الإرسال...</span>
           ) : (
-            <><Send size={18} /> إرسال الملاحظة</>
+            <><Send size={18} /> إرسال ملاحظة {page}</>
           )}
         </button>
       </form>
