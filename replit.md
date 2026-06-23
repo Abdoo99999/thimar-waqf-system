@@ -10,7 +10,9 @@ A management and evaluation platform for Omani Waqf (charitable endowment) insti
 - **Icons:** Lucide React
 - **Charts:** Recharts
 - **Routing:** React Router Dom v7
-- **Data Persistence:** localStorage (mock database via `services/db.ts`)
+- **Data Persistence:** PostgreSQL (via Express backend) + localStorage cache
+- **Backend:** Express.js (server.js) — API on port 3001
+- **Database:** PostgreSQL (Replit managed) — key-value store via `waqf_store` table
 - **Package Manager:** npm
 
 ## Project Structure
@@ -22,7 +24,8 @@ A management and evaluation platform for Omani Waqf (charitable endowment) insti
 ├── constants.ts         # Static data (governorates, default indicators)
 ├── vite.config.ts       # Vite configuration (port 5000, host 0.0.0.0)
 ├── services/
-│   └── db.ts            # localStorage-based mock database
+│   └── db.ts            # Hybrid DB: PostgreSQL (via API) + localStorage cache
+├── server.js            # Express backend: REST API + static file server
 ├── contexts/
 │   └── UiContext.tsx    # Global state (auth, user roles, selected institution)
 ├── pages/               # Feature views
