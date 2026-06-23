@@ -1,17 +1,9 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useUi } from '../contexts/UiContext';
 import { saveFeedback, generateId, getInstitutions } from '../services/db';
-import { SystemFeedback, FeedbackCategory } from '../types';
+import { SystemFeedback } from '../types';
 import { MessageSquarePlus, Send, Image, X, CheckCircle } from 'lucide-react';
-
-const CATEGORIES: FeedbackCategory[] = [
-  'اقتراح تطوير',
-  'صعوبة استخدام',
-  'خطأ تقني',
-  'ملاحظة على الأسئلة',
-  'أخرى',
-];
 
 const PAGES = [
   'بيانات المؤسسة',
@@ -26,12 +18,21 @@ const PAGES = [
 
 const Feedback: React.FC = () => {
   const { currentWaqfId, user } = useUi();
-  const [category, setCategory] = useState<FeedbackCategory>('اقتراح تطوير');
   const [page, setPage] = useState(PAGES[0]);
   const [text, setText] = useState('');
   const [image, setImage] = useState<string | undefined>(undefined);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const textRef = useRef('');
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    textRef.current = e.target.value;
+    setText(e.target.value);
+  };
+
+  const handlePageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setPage(e.target.value);
+  };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -47,7 +48,8 @@ const Feedback: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!text.trim()) return;
+    const currentText = textRef.current.trim() || text.trim();
+    if (!currentText) return;
     setSubmitting(true);
 
     const inst = currentWaqfId
@@ -58,9 +60,9 @@ const Feedback: React.FC = () => {
       id: generateId(),
       institution_id: currentWaqfId ?? '',
       institution_name: inst?.name ?? user ?? 'غير محدد',
-      category,
+      category: 'أخرى',
       page,
-      text: text.trim(),
+      text: currentText,
       image,
       submitted_at: new Date().toISOString(),
       is_read: false,
@@ -85,7 +87,7 @@ const Feedback: React.FC = () => {
           تم إرسال ملاحظتك بنجاح إلى إدارة النظام. سنأخذها بعين الاعتبار في التحسينات القادمة.
         </p>
         <button
-          onClick={() => { setSubmitted(false); setText(''); setImage(undefined); setCategory('اقتراح تطوير'); }}
+          onClick={() => { setSubmitted(false); setText(''); textRef.current = ''; setImage(undefined); }}
           className="bg-teal-600 text-white px-6 py-2 rounded-lg hover:bg-teal-700 font-bold transition-colors"
         >
           إرسال ملاحظة أخرى
@@ -113,31 +115,12 @@ const Feedback: React.FC = () => {
       </div>
 
       <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-5">
-        <div>
-          <label className="block text-sm font-bold text-gray-700 mb-2">نوع الملاحظة *</label>
-          <div className="flex flex-wrap gap-2">
-            {CATEGORIES.map(cat => (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => setCategory(cat)}
-                className={`px-4 py-2 rounded-full text-sm font-bold border transition-all ${
-                  category === cat
-                    ? 'bg-teal-600 text-white border-teal-600'
-                    : 'bg-white text-gray-600 border-gray-300 hover:border-teal-400'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-        </div>
 
         <div>
           <label className="block text-sm font-bold text-gray-700 mb-2">الصفحة أو النافذة المتعلقة *</label>
           <select
             value={page}
-            onChange={e => setPage(e.target.value)}
+            onChange={handlePageChange}
             className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none bg-white"
           >
             {PAGES.map(p => <option key={p} value={p}>{p}</option>)}
@@ -147,10 +130,9 @@ const Feedback: React.FC = () => {
         <div>
           <label className="block text-sm font-bold text-gray-700 mb-2">نص الملاحظة *</label>
           <textarea
-            required
-            rows={5}
+            rows={6}
             value={text}
-            onChange={e => setText(e.target.value)}
+            onChange={handleTextChange}
             placeholder="اكتب ملاحظتك أو اقتراحك بالتفصيل هنا..."
             className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none resize-none"
           />
