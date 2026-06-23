@@ -295,7 +295,8 @@ const Institutions: React.FC = () => {
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-        <table className="w-full text-right">
+        <div className="overflow-x-auto">
+        <table className="w-full text-right min-w-[600px]">
           <thead className="bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-medium">
             <tr>
               <th className="p-4">المؤسسة</th>
@@ -373,6 +374,7 @@ const Institutions: React.FC = () => {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Pagination Controls */}
@@ -402,37 +404,37 @@ const Institutions: React.FC = () => {
       )}
 
       {showForm && (
-        <div className="fixed inset-0 bg-navy-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-y-auto animate-scaleIn shadow-2xl relative border-4 border-white">
+        <div className="fixed inset-0 bg-navy-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4">
+          <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto animate-scaleIn shadow-2xl relative border-4 border-white">
             
             {/* STYLISH HEADER */}
-            <div className="relative bg-navy-900 p-8 overflow-hidden rounded-t-[20px]">
+            <div className="relative bg-navy-900 p-5 sm:p-8 overflow-hidden rounded-t-[16px] sm:rounded-t-[20px]">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-20 -mt-20 blur-3xl"></div>
                 <div className="absolute bottom-0 left-0 w-40 h-40 bg-teal-500/10 rounded-full -ml-10 -mb-10 blur-2xl"></div>
                 
-                <div className="relative z-10 flex justify-between items-start">
-                    <div>
-                        <div className="flex items-center gap-3">
-                            <h3 className="text-3xl font-bold text-white mb-2 flex items-center gap-3">
-                                <Building className="text-gold-500" size={32} />
+                <div className="relative z-10 flex justify-between items-start gap-3">
+                    <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                            <h3 className="text-xl sm:text-3xl font-bold text-white flex items-center gap-2">
+                                <Building className="text-gold-500 shrink-0" size={24} />
                                 {formData.id ? (isFormLocked ? 'عرض بيانات المؤسسة' : 'تعديل بيانات المؤسسة') : 'تسجيل مؤسسة جديدة'}
                             </h3>
                             {isFormLocked && (
-                                <span className="bg-red-500/20 text-red-200 border border-red-500/50 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 backdrop-blur-sm">
-                                    <Lock size={12} /> للعرض فقط (تم الإرسال)
+                                <span className="bg-red-500/20 text-red-200 border border-red-500/50 px-2 py-0.5 rounded-full text-xs font-bold flex items-center gap-1">
+                                    <Lock size={10} /> للعرض فقط
                                 </span>
                             )}
                         </div>
-                        <p className="text-blue-200 text-sm">يرجى تعبئة كافة البيانات بدقة لضمان سير عملية التقييم.</p>
+                        <p className="text-blue-200 text-xs sm:text-sm">يرجى تعبئة كافة البيانات بدقة لضمان سير عملية التقييم.</p>
                     </div>
-                    <button onClick={() => setShowForm(false)} className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-full transition-colors backdrop-blur-md">
-                        <X size={24} />
+                    <button onClick={() => setShowForm(false)} className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-full transition-colors shrink-0">
+                        <X size={22} />
                     </button>
                 </div>
             </div>
 
             {/* Content Container */}
-            <div className="p-8">
+            <div className="p-4 sm:p-8">
                 {isFormLocked ? (
                     <div className="bg-blue-50 border-r-4 border-blue-500 p-4 rounded-lg mb-8 flex gap-3 shadow-sm">
                         <Lock className="w-6 h-6 text-blue-600 shrink-0" />

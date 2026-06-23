@@ -169,7 +169,8 @@ const SystemFeedbackPage: React.FC = () => {
             هذه بيانات الدخول التجريبية لكل مؤسسة. أرسل رمز الدخول وكلمة المرور للمؤسسة عبر قناة آمنة.
           </div>
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[500px]">
               <thead className="bg-navy-900 text-white">
                 <tr>
                   <th className="px-4 py-3 text-right font-bold">#</th>
@@ -219,6 +220,7 @@ const SystemFeedbackPage: React.FC = () => {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* نافذة تأكيد الإعادة */}

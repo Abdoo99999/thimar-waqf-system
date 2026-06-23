@@ -61,13 +61,13 @@ const ApprovalRequests: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-20">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-navy-900">طلبات الاعتماد الواردة</h2>
+          <h2 className="text-xl md:text-2xl font-bold text-navy-900">طلبات الاعتماد الواردة</h2>
           <p className="text-sm text-gray-500 mt-1">طلبات المؤسسات التي أرسلت تقييمها للمراجعة</p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="bg-red-100 text-red-600 px-3 py-1 rounded-full text-sm font-bold">
+          <span className="bg-red-100 text-red-600 px-3 py-1 rounded-full text-sm font-bold whitespace-nowrap">
             {requests.length} طلب معلق
           </span>
           <button
@@ -83,7 +83,8 @@ const ApprovalRequests: React.FC = () => {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <table className="w-full text-right">
+        <div className="overflow-x-auto">
+        <table className="w-full text-right min-w-[560px]">
           <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-100">
             <tr>
               <th className="p-4">المؤسسة</th>
@@ -143,6 +144,7 @@ const ApprovalRequests: React.FC = () => {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* نافذة تأكيد إعادة التعيين */}

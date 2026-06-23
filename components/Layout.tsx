@@ -105,25 +105,25 @@ const AdminActionBar = ({ waqfId, showToast }: any) => {
     };
 
     return (
-        <div className="bg-navy-900 text-white p-3 px-6 flex justify-between items-center shadow-lg animate-slideDown z-30 sticky top-0 border-b border-navy-800">
+        <div className="bg-navy-900 text-white p-3 px-4 md:px-6 flex flex-col sm:flex-row gap-2 sm:gap-0 justify-between items-start sm:items-center shadow-lg animate-slideDown z-30 sticky top-0 border-b border-navy-800">
             <div className="flex items-center gap-2">
-                <Lock size={18} className="text-gold-500" />
+                <Lock size={18} className="text-gold-500 shrink-0" />
                 <span className="font-bold text-sm">هذا الملف قيد المراجعة (للاعتماد)</span>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 w-full sm:w-auto">
                 <button 
                     type="button"
                     onClick={() => setShowReturnModal(true)}
-                    className="bg-red-700 hover:bg-red-800 text-white px-4 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors active:scale-95"
+                    className="flex-1 sm:flex-none bg-red-700 hover:bg-red-800 text-white px-3 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-1.5 transition-colors active:scale-95"
                 >
-                    <RotateCcw size={16} /> إعادة للتعديل
+                    <RotateCcw size={15} /> <span className="hidden sm:inline">إعادة للتعديل</span><span className="sm:hidden">إعادة</span>
                 </button>
                 <button 
                     type="button"
                     onClick={() => setShowApproveModal(true)}
-                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors shadow-md active:scale-95"
+                    className="flex-1 sm:flex-none bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-1.5 transition-colors shadow-md active:scale-95"
                 >
-                    <CheckCircle size={16} /> اعتماد الأداء المؤسسي
+                    <CheckCircle size={15} /> <span className="hidden sm:inline">اعتماد الأداء المؤسسي</span><span className="sm:hidden">اعتماد</span>
                 </button>
             </div>
 
@@ -181,6 +181,11 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, logout, user, role, currentWaqfId, showToast } = useUi();
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Auto-close sidebar on navigation (mobile)
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
 
   // Get Progress for User
   // Force re-calculation on location change to keep locks updated
@@ -293,31 +298,30 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Header */}
-        <header className="bg-white dark:bg-gray-800 shadow-sm z-10 border-b border-gray-200 dark:border-gray-700 h-20 flex items-center px-6 justify-between print:hidden">
-            <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-gray-600 dark:text-gray-200 transition-transform hover:scale-110">
+        <header className="bg-white dark:bg-gray-800 shadow-sm z-10 border-b border-gray-200 dark:border-gray-700 min-h-[4rem] flex items-center px-4 md:px-6 justify-between print:hidden">
+            <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-gray-600 dark:text-gray-200 transition-transform hover:scale-110 p-1 ml-2">
                 <Menu size={24} />
             </button>
             
-            <div className="flex flex-col items-center flex-1 lg:flex-none lg:items-start">
-                <h2 className="text-xl font-bold text-navy-900 dark:text-white">نظام تقييم المؤسسات الوقفية</h2>
-                <span className="text-xs text-teal-600 dark:text-teal-400 font-semibold hidden md:block">سلطنة عُمان - {settings.orgName}</span>
+            <div className="flex flex-col items-center flex-1 lg:flex-none lg:items-start min-w-0">
+                <h2 className="text-base md:text-xl font-bold text-navy-900 dark:text-white truncate">نظام تقييم المؤسسات الوقفية</h2>
+                <span className="text-xs text-teal-600 dark:text-teal-400 font-semibold hidden sm:block">سلطنة عُمان - {settings.orgName}</span>
             </div>
 
-            <div className="hidden md:flex items-center gap-4">
-                {/* Refresh Button */}
+            <div className="flex items-center gap-2 md:gap-4 mr-2">
                 <button 
                   onClick={() => window.location.reload()}
                   className="p-2 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-full transition-all"
                   title="تحديث سريع"
                 >
-                    <RefreshCw size={20} />
+                    <RefreshCw size={18} />
                 </button>
 
-                <div className="text-left">
+                <div className="hidden md:block text-left">
                    <p className="text-sm font-bold text-navy-900 dark:text-white">أهلاً، {user}</p>
                    <p className="text-xs text-gold-600 dark:text-gold-400">{role === 'admin' ? 'مدير النظام' : 'مستخدم مؤسسة'}</p>
                 </div>
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow-md transform hover:scale-110 transition-transform duration-300 ${role === 'admin' ? 'bg-navy-800' : 'bg-teal-600'}`}>
+                <div className={`w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center font-bold text-white shadow-md shrink-0 ${role === 'admin' ? 'bg-navy-800' : 'bg-teal-600'}`}>
                     {user?.charAt(0).toUpperCase()}
                 </div>
             </div>
