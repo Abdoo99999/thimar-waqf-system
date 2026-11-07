@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "gIAr328XzWxt8veb5rQSA"
+uri = "file://generated-artifacts/project-complete.zip"
+type = "unspecified"
+title = "ملفات المشروع كاملة"
+description = "ملف ZIP لجميع ملفات المشروع باستثناء مجلدات node_modules. الحجم نحو 48.5 ميغابايت، وتم التحقق من سلامة الأرشيف."
+logical_id = "2575da6d-45be-48f5-b2c9-1eff96e467c5"
+content_hash = "sha256:ca31e12d786beb579930ae072f12548955acba186ec098380d63a0ac581f1225"
+size = 48535244
+mtime_ms = 1794062586315
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ba283d71-05f6-4315-afc4-de947569cc99/2575da6d-45be-48f5-b2c9-1eff96e467c5/658ad17a-5a2b-44b9-a4a2-36af5845c100"
+storage_version_token = "1794062591790115"
+content_type = "application/octet-stream"
