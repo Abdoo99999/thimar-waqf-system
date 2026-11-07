@@ -10,9 +10,9 @@ A management and evaluation platform for Omani Waqf (charitable endowment) insti
 - **Icons:** Lucide React
 - **Charts:** Recharts
 - **Routing:** React Router Dom v7
-- **Data Persistence:** PostgreSQL (via Express backend) + localStorage cache
+- **Data Persistence:** PostgreSQL via Express backend (server is the single source of truth; nothing stored in localStorage)
 - **Backend:** Express.js (server.js) — API on port 3001
-- **Database:** PostgreSQL (Replit managed) — key-value store via `waqf_store` table
+- **Database:** PostgreSQL (Replit managed) — tables `app_records` (one row per record), `app_accounts`, `app_admins`, `app_meta`. The legacy `waqf_store` table is left untouched as a backup.
 - **Package Manager:** npm
 
 ## Project Structure
@@ -24,7 +24,7 @@ A management and evaluation platform for Omani Waqf (charitable endowment) insti
 ├── constants.ts         # Static data (governorates, default indicators)
 ├── vite.config.ts       # Vite configuration (port 5000, host 0.0.0.0)
 ├── services/
-│   └── db.ts            # Hybrid DB: PostgreSQL (via API) + localStorage cache
+│   └── db.ts            # Client data layer: per-record saves through the API
 ├── server.js            # Express backend: REST API + static file server
 ├── contexts/
 │   └── UiContext.tsx    # Global state (auth, user roles, selected institution)
@@ -43,7 +43,16 @@ A management and evaluation platform for Omani Waqf (charitable endowment) insti
 - **Role-Based Access:** Admin (strategic view) and User (institution data entry)
 - **Sequential Workflow:** Guards prevent skipping steps
 - **Arabic Localization:** UI is primarily in Arabic (RTL)
-- **Mock Database:** localStorage with seeded VIP institution data
+- **No demo data:** institutions are seeded from `server/seed-institutions.json` (names only)
+
+## Security model (do not regress)
+- Login is verified on the server. Sessions are signed HttpOnly cookies (12h). Passwords are hashed with scrypt.
+- Institution users receive and can modify ONLY their own institution's records; the server enforces this in `checkUserWrite`.
+- Every save sends a single record (`PUT /api/records/:collection/:id`). Never reintroduce whole-collection writes: they caused lost data when two institutions saved at once.
+- Institutions cannot approve/return evaluations or edit answers after submitting.
+- Admin password: set the Secret `ADMIN_PASSWORD` (username `admin`, or `ADMIN_USERNAME`). If not set, a temporary password is printed once in the server console on first start. To force-reset to the Secret value, also set `ADMIN_PASSWORD_FORCE=true` for one restart.
+- Institution passwords are issued by the admin from "ملاحظات النظام ← الحسابات"; they are shown once and must be changed at first login.
+- Optional Secret `SESSION_SECRET`; otherwise one is generated and stored in `app_meta`.
 
 ## Development
 ```bash

@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { CheckCircle, XCircle, Info } from 'lucide-react';
 import { CURRENT_YEAR } from '../constants';
+import { getSession, logoutServer } from '../services/db';
 
 interface Toast {
     id: string;
@@ -32,51 +33,61 @@ const UiContext = createContext<UiContextType | undefined>(undefined);
 
 export const UiProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [toasts, setToasts] = useState<Toast[]>([]);
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [user, setUser] = useState<string | null>(null);
-    const [role, setRole] = useState<UserRole | null>(null);
-    
-    // Initialize from LocalStorage
+    // حالة الدخول تأتي من الخادم (جلسة HttpOnly)، وليس من localStorage
+    const initial = getSession();
+    const [isAuthenticated, setIsAuthenticated] = useState(initial.authenticated);
+    const [user, setUser] = useState<string | null>(initial.authenticated ? (initial.name || null) : null);
+    const [role, setRole] = useState<UserRole | null>(initial.authenticated ? (initial.role || null) : null);
+
     const [currentWaqfId, setCurrentWaqfId] = useState<string | null>(() => {
-        return localStorage.getItem('currentWaqfContext');
+        if (initial.role === 'user') return initial.institution_id || null;
+        if (initial.role === 'admin') { try { return localStorage.getItem('currentWaqfContext'); } catch { return null; } }
+        return null;
     });
 
     // Global Year State (Default to Constant CURRENT_YEAR)
     const [currentYear, setCurrentYear] = useState<number>(CURRENT_YEAR);
 
-    // Load auth state
-    useEffect(() => {
-        const storedUser = localStorage.getItem('waqf_user');
-        const storedRole = localStorage.getItem('waqf_role');
-        if (storedUser && storedRole) {
-            setUser(storedUser);
-            setRole(storedRole as UserRole);
-            setIsAuthenticated(true);
-        }
-    }, []);
-
-    const login = (username: string, role: UserRole) => {
-        localStorage.setItem('waqf_user', username);
-        localStorage.setItem('waqf_role', role);
-        setUser(username);
-        setRole(role);
-        setIsAuthenticated(true);
-    };
-
-    const logout = () => {
-        localStorage.removeItem('waqf_user');
-        localStorage.removeItem('waqf_role');
-        localStorage.removeItem('currentWaqfContext'); // Clear context on logout
+    const resetAuthState = () => {
+        try { localStorage.removeItem('currentWaqfContext'); } catch { /* ignore */ }
         setUser(null);
         setRole(null);
         setCurrentWaqfId(null);
         setIsAuthenticated(false);
     };
 
+    // يُستدعى بعد نجاح الدخول في الخادم
+    const login = (username: string, newRole: UserRole) => {
+        const s = getSession();
+        setUser(username);
+        setRole(newRole);
+        if (newRole === 'user') setCurrentWaqfId(s.institution_id || null);
+        setIsAuthenticated(true);
+    };
+
+    const logout = () => {
+        resetAuthState();
+        logoutServer().finally(() => { window.location.hash = '#/'; });
+    };
+
+    useEffect(() => {
+        const onExpired = () => { resetAuthState(); window.location.hash = '#/'; };
+        const onError = (e: Event) => showToast((e as CustomEvent).detail || 'حدث خطأ', 'error');
+        window.addEventListener('sessionExpired', onExpired);
+        window.addEventListener('dbError', onError);
+        return () => {
+            window.removeEventListener('sessionExpired', onExpired);
+            window.removeEventListener('dbError', onError);
+        };
+    }, []);
+
     const setWaqfContext = (id: string) => {
-        // Institution users: once set, cannot change to a different institution
-        if (role === 'user' && currentWaqfId && id !== currentWaqfId) return;
-        localStorage.setItem('currentWaqfContext', id);
+        // المؤسسة مقيدة بمؤسستها فقط (والخادم يفرض ذلك أيضاً)
+        if (role === 'user' || getSession().role === 'user') {
+            setCurrentWaqfId(getSession().institution_id || null);
+            return;
+        }
+        try { localStorage.setItem('currentWaqfContext', id); } catch { /* ignore */ }
         setCurrentWaqfId(id);
     };
 

@@ -1,10 +1,15 @@
-
 import { Institution, Indicator, Evaluation, Response, ComplianceRecord, ImprovementItem, RiskRegisterItem, FinancialRecord, InstitutionAccount, SystemFeedback } from '../types';
-import { DEFAULT_INDICATORS, CURRENT_YEAR, SEEDED_INSTITUTIONS, GOVERNORATES } from '../constants';
+import { DEFAULT_INDICATORS, CURRENT_YEAR } from '../constants';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// طبقة البيانات
+// - الخادم هو المرجع الوحيد للبيانات والصلاحيات (لا شيء يُحفظ في localStorage)
+// - كل حفظ يرسل سجلاً واحداً فقط، فلا يكتب مستخدم فوق بيانات غيره
+// - عمليات الكتابة تُرسل بالترتيب (طابور) حتى يصل التقييم قبل إجاباته
+// ─────────────────────────────────────────────────────────────────────────────
 
 const DB_KEYS = {
   INSTITUTIONS: 'waqf_institutions',
-  LEGACY_INSTITUTIONS: 'institutions',
   INDICATORS: 'waqf_indicators',
   EVALUATIONS: 'waqf_evaluations',
   RESPONSES: 'waqf_responses',
@@ -13,310 +18,168 @@ const DB_KEYS = {
   RISKS: 'waqf_risks',
   FINANCIALS: 'waqf_financials',
   SETTINGS: 'waqf_settings',
-  ACCOUNTS: 'waqf_accounts',
-  FEEDBACK: 'waqf_feedback'
+  FEEDBACK: 'waqf_feedback',
 };
 
 const API = '/api';
+const DEFAULT_SETTINGS = { darkMode: false, orgName: 'وزارة الأوقاف والشؤون الدينية' };
 
-const cache: Record<string, any> = {};
+export interface SessionInfo {
+  authenticated: boolean;
+  role?: 'admin' | 'user';
+  name?: string;
+  institution_id?: string | null;
+  must_change_password?: boolean;
+}
 
-export const generateId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-const getRandomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
-const getRandomItem = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
-const SIMPLE_NAMES = ['محمد', 'علي', 'أحمد', 'سالم', 'خالد', 'سعيد', 'عبدالله', 'ناصر', 'يوسف', 'عمر'];
+const cache: Record<string, any[]> = {};
+let settingsCache: any = null;
+let session: SessionInfo = { authenticated: false };
 
-const inferDetailsByName = (name: string) => {
-  const n = name;
-  if (n.includes('صحار')) return { gov: 'شمال الباطنة', wil: 'صحار' };
-  if (n.includes('نزوى') || n.includes('علاية نزوى') || n.includes('سعال') || n.includes('كرشاء')) return { gov: 'الداخلية', wil: 'نزوى' };
-  if (n.includes('صلالة')) return { gov: 'ظفار', wil: 'صلالة' };
-  if (n.includes('البريمي')) return { gov: 'البريمي', wil: 'البريمي' };
-  if (n.includes('صور')) return { gov: 'جنوب الشرقية', wil: 'صور' };
-  if (n.includes('الرستاق')) return { gov: 'جنوب الباطنة', wil: 'الرستاق' };
-  if (n.includes('بهلاء')) return { gov: 'الداخلية', wil: 'بهلاء' };
-  if (n.includes('عبري')) return { gov: 'الظاهرة', wil: 'عبري' };
-  if (n.includes('إبراء')) return { gov: 'شمال الشرقية', wil: 'إبراء' };
-  if (n.includes('السيب')) return { gov: 'مسقط', wil: 'السيب' };
-  if (n.includes('بوشر')) return { gov: 'مسقط', wil: 'بوشر' };
-  if (n.includes('العامرات')) return { gov: 'مسقط', wil: 'العامرات' };
-  if (n.includes('سمائل')) return { gov: 'الداخلية', wil: 'سمائل' };
-  if (n.includes('المضيبي') || n.includes('سناو')) return { gov: 'شمال الشرقية', wil: 'المضيبي' };
-  if (n.includes('السويق')) return { gov: 'شمال الباطنة', wil: 'السويق' };
-  if (n.includes('محضة')) return { gov: 'البريمي', wil: 'محضة' };
-  if (n.includes('جعلان')) return { gov: 'جنوب الشرقية', wil: 'جعلان بني بو علي' };
-  return { gov: 'مسقط', wil: 'بوشر' };
+export const getSession = () => session;
+
+export const generateId = () => {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID().replace(/-/g, '');
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 };
 
-const generateDummyFinancials = (instId: string, year: number, type: 'GOOD' | 'AVERAGE' | 'BAD'): FinancialRecord => {
-    const baseAssets = getRandomInt(100000, 5000000);
-    const assets = year === 2025 ? Math.floor(baseAssets * 1.05) : baseAssets;
-    const liabilities = Math.floor(assets * (getRandomInt(1, 10) / 100));
-    const netAssets = assets - liabilities;
-    let revenue = 0, expenses = 0, adminExpenses = 0;
-    if (type === 'GOOD') {
-        revenue = Math.floor(assets * 0.15);
-        expenses = Math.floor(revenue * 0.70);
-        adminExpenses = Math.floor(expenses * 0.10);
-    } else if (type === 'AVERAGE') {
-        revenue = Math.floor(assets * 0.08);
-        expenses = Math.floor(revenue * 0.95);
-        adminExpenses = Math.floor(expenses * 0.18);
-    } else {
-        revenue = Math.floor(assets * 0.03);
-        expenses = Math.floor(revenue * 1.5);
-        adminExpenses = Math.floor(expenses * 0.40);
+// ─── الاتصال بالخادم ────────────────────────────────────────────────────────
+const notifyError = (message: string) => window.dispatchEvent(new CustomEvent('dbError', { detail: message }));
+
+const request = async (method: string, url: string, body?: any) => {
+  const res = await fetch(`${API}${url}`, {
+    method,
+    credentials: 'same-origin',
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  let payload: any = null;
+  try { payload = await res.json(); } catch { /* empty */ }
+  if (!res.ok) {
+    if (res.status === 401 && session.authenticated) {
+      // انتهت الجلسة: نعيد المستخدم لصفحة الدخول
+      session = { authenticated: false };
+      window.dispatchEvent(new Event('sessionExpired'));
     }
-    return {
-        id: generateId(),
-        institution_id: instId,
-        fiscal_year: year,
-        auditor_name: type === 'GOOD' ? 'مكتب ديلويت للتدقيق' : (type === 'BAD' ? 'مكتب المحاسبة العامة' : 'مكتب النزاهة'),
-        total_assets: assets,
-        total_liabilities: liabilities,
-        net_waqf_assets: netAssets,
-        total_revenues: revenue,
-        total_expenses: expenses,
-        admin_general_expenses: adminExpenses,
-        surplus_deficit: revenue - expenses,
-        cash_end_period: Math.floor(revenue * 0.2),
-        operating_cash_flow: Math.floor(revenue * 0.25),
-        status: type === 'BAD' ? 'Flagged' : 'Submitted',
-        flags: [],
-        submission_date: new Date().toISOString()
-    };
-};
-
-const safeParse = <T>(json: string | null, fallback: T): T => {
-    if (!json) return fallback;
-    try { return JSON.parse(json); } catch (e) { return fallback; }
-};
-
-const data = <T>(key: string, forceRefresh = false): T[] => {
-  if (!forceRefresh && cache[key]) return cache[key];
-  const stored = localStorage.getItem(key);
-  const parsed = safeParse<T[]>(stored, []);
-  cache[key] = parsed;
-  return parsed;
-};
-
-export const clearCache = (...keys: string[]) => {
-  if (keys.length === 0) {
-    Object.keys(cache).forEach(k => delete cache[k]);
-  } else {
-    keys.forEach(k => delete cache[k]);
+    const err: any = new Error(payload?.error || `خطأ ${res.status}`);
+    err.status = res.status;
+    throw err;
   }
+  return payload;
 };
 
-const save = <T>(key: string, items: T[]) => {
-  cache[key] = items;
-  try { localStorage.setItem(key, JSON.stringify(items)); } catch (e) { console.error('localStorage error:', e); }
-  fetch(`${API}/${key}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(items),
-  }).catch(e => console.warn(`[DB] Server sync failed for ${key}:`, e));
+let writeQueue: Promise<any> = Promise.resolve();
+let pendingWrites = 0;
+const enqueue = <T>(fn: () => Promise<T>): Promise<T> => {
+  pendingWrites++;
+  const p = writeQueue.then(fn);
+  writeQueue = p.catch(() => undefined).finally(() => { pendingWrites--; });
+  p.catch(e => notifyError(`لم يتم الحفظ: ${e.message}`));
+  return p;
+};
+export const hasPendingWrites = () => pendingWrites > 0;
+window.addEventListener('beforeunload', (e) => {
+  if (pendingWrites > 0) { e.preventDefault(); e.returnValue = ''; }
+});
+
+const data = <T>(key: string): T[] => {
+  if (!cache[key]) cache[key] = [];
+  return cache[key] as T[];
 };
 
-const initializeDatabase = () => {
-    if (localStorage.getItem(DB_KEYS.INSTITUTIONS)) return;
-    console.log("Initializing LITE Database (5 VIPs)...");
-    const currentFinancials: FinancialRecord[] = [];
-    const mergedMap = new Map<string, Institution>();
-    let financialsChanged = false;
+const upsert = <T extends { id: string }>(key: string, item: T) => {
+  const list = data<T>(key);
+  const i = list.findIndex(x => x.id === item.id);
+  if (i >= 0) list[i] = item; else list.push(item);
+  return enqueue(() => request('PUT', `/records/${key}/${encodeURIComponent(item.id)}`, item));
+};
 
-    SEEDED_INSTITUTIONS.forEach((seedInst: any, index) => {
-        const id = seedInst.id || generateId();
-        const location = inferDetailsByName(seedInst.name);
-        const simpleManager = getRandomItem(SIMPLE_NAMES);
-        const isVIP = index > 0 && index <= 5;
-        const mod = index % 10;
-        let type: 'GOOD' | 'AVERAGE' | 'BAD' = 'GOOD';
-        if (mod > 7) type = 'BAD';
-        else if (mod > 5) type = 'AVERAGE';
+const remove = (key: string, id: string) => {
+  cache[key] = data<any>(key).filter(x => x.id !== id);
+  return enqueue(() => request('DELETE', `/records/${key}/${encodeURIComponent(id)}`));
+};
 
-        const instObj: Institution = {
-            ...seedInst,
-            id: id,
-            governorate: seedInst.governorate || location.gov,
-            wilayat: seedInst.wilayat || location.wil,
-            manager_name: seedInst.manager_name || simpleManager,
-            phone: seedInst.phone || `9${getRandomInt(1000000, 9999999)}`,
-            email: seedInst.email || `info@waqf.om`,
-            establishment_date: seedInst.establishment_date || `20${getRandomInt(15, 23)}-01-01`,
-            license_number: seedInst.license_number || `${getRandomInt(1000, 9999)}`,
-            capital_omr: seedInst.capital_omr || getRandomInt(100000, 5000000),
-            employees_omani: seedInst.employees_omani || getRandomInt(2, 15),
-            employees_non_omani: seedInst.employees_non_omani || getRandomInt(0, 5),
-            profile_completed: isVIP,
-            institution_status: 'فاعلة',
-            board_status: 'قائم',
-            has_executive_management: true,
-            has_auditor_company: true,
-            has_financial_report_prev_year: true,
-            has_minutes_prev_year: true,
-            financial_reports: [],
-            created_at: new Date().toISOString(),
-            documents: []
-        };
+// ─── التحميل والدخول ───────────────────────────────────────────────────────
+const resetCache = () => {
+  Object.keys(cache).forEach(k => delete cache[k]);
+  settingsCache = null;
+};
 
-        if (isVIP) {
-            const fin2024 = generateDummyFinancials(id, 2024, type);
-            const fin2025 = generateDummyFinancials(id, 2025, type);
-            instObj.financial_reports = [fin2024, fin2025];
-        }
-        mergedMap.set(seedInst.name, instObj);
-    });
+export const loadData = async () => {
+  const d = await request('GET', '/data');
+  resetCache();
+  Object.values(DB_KEYS).forEach(k => {
+    if (k === DB_KEYS.SETTINGS) settingsCache = d[k] || null;
+    else cache[k] = Array.isArray(d[k]) ? d[k] : [];
+  });
+};
 
-    const finalResults = Array.from(mergedMap.values());
-
-    finalResults.forEach(inst => {
-        if (inst.financial_reports && inst.financial_reports.length > 0) {
-            inst.financial_reports.forEach(report => {
-                const fullRecord: FinancialRecord = {
-                    ...report,
-                    id: report.id || generateId(),
-                    institution_id: inst.id,
-                    fiscal_year: report.fiscal_year || CURRENT_YEAR,
-                    auditor_name: report.auditor_name || 'غير محدد',
-                    total_assets: report.total_assets || 0,
-                    total_liabilities: report.total_liabilities || 0,
-                    net_waqf_assets: report.net_waqf_assets || 0,
-                    total_revenues: report.total_revenues || 0,
-                    total_expenses: report.total_expenses || 0,
-                    admin_general_expenses: report.admin_general_expenses || 0,
-                    surplus_deficit: report.surplus_deficit || 0,
-                    status: (report.status as any) || 'Submitted',
-                    flags: report.flags || [],
-                    submission_date: report.submission_date || new Date().toISOString()
-                };
-                currentFinancials.push(fullRecord);
-                financialsChanged = true;
-            });
-        }
-    });
-
-    save(DB_KEYS.INSTITUTIONS, finalResults);
-    if (financialsChanged || currentFinancials.length === 0) {
-        save(DB_KEYS.FINANCIALS, currentFinancials);
-    } else {
-        cache[DB_KEYS.FINANCIALS] = currentFinancials;
-    }
+export const refreshData = async () => {
+  await writeQueue;
+  await loadData();
 };
 
 export const dbReady: Promise<void> = (async () => {
   try {
-    // First check if server is actually available
-    const serverAvailable = await fetch(`${API}/health`)
-      .then(r => r.ok)
-      .catch(() => false);
-
-    if (!serverAvailable) {
-      // Server offline (static deployment or dev without backend) — use localStorage only
-      console.warn('[DB] Server unavailable, using localStorage only');
-      if (!localStorage.getItem(DB_KEYS.INSTITUTIONS)) {
-        initializeDatabase();
-      }
-      initAccounts();
-      return;
-    }
-
-    // Server is available — sync data from server
-    const collectionKeys = Object.values(DB_KEYS).filter(k => k !== DB_KEYS.SETTINGS);
-
-    const responses = await Promise.all(
-      collectionKeys.map(k =>
-        fetch(`${API}/${k}`)
-          .then(r => r.ok ? r.json() : [])
-          .catch(() => [])
-      )
-    );
-
-    let hasServerData = false;
-    collectionKeys.forEach((key, i) => {
-      const d = responses[i];
-      if (Array.isArray(d) && d.length > 0) {
-        cache[key] = d;
-        try { localStorage.setItem(key, JSON.stringify(d)); } catch (e) {}
-        if (key === DB_KEYS.INSTITUTIONS) hasServerData = true;
-      } else if (Array.isArray(d) && d.length === 0 && key === DB_KEYS.ACCOUNTS) {
-        // Server has no accounts — clear stale localStorage so initAccounts regenerates fresh
-        localStorage.removeItem(key);
-        delete cache[key];
-      }
-    });
-
-    const settingsData = await fetch(`${API}/${DB_KEYS.SETTINGS}`)
-      .then(r => r.ok ? r.json() : null)
-      .catch(() => null);
-    if (settingsData && !Array.isArray(settingsData) && Object.keys(settingsData).length > 0) {
-      localStorage.setItem(DB_KEYS.SETTINGS, JSON.stringify(settingsData));
-    }
-
-    if (!hasServerData) {
-      collectionKeys.forEach(k => { localStorage.removeItem(k); delete cache[k]; });
-      initializeDatabase();
-    }
-
-    initAccounts();
-
+    session = await request('GET', '/auth/me');
+    if (session.authenticated) await loadData();
   } catch (e) {
-    console.warn('[DB] Error during DB init, falling back to localStorage:', e);
-    if (!localStorage.getItem(DB_KEYS.INSTITUTIONS)) {
-      initializeDatabase();
-    }
-    initAccounts();
+    console.warn('[DB] تعذر الاتصال بالخادم:', e);
+    session = { authenticated: false };
   }
 })();
 
+export const loginInstitution = async (code: string, password: string) => {
+  const r = await request('POST', '/auth/login', { code, password });
+  session = { authenticated: true, ...r };
+  await loadData();
+  return session;
+};
+
+export const loginAdmin = async (username: string, password: string) => {
+  const r = await request('POST', '/auth/admin-login', { username, password });
+  session = { authenticated: true, ...r };
+  await loadData();
+  return session;
+};
+
+export const logoutServer = async () => {
+  try { await writeQueue; await request('POST', '/auth/logout'); } catch { /* ignore */ }
+  session = { authenticated: false };
+  resetCache();
+  // تنظيف أي بيانات قديمة من النسخة السابقة
+  try {
+    ['waqf_institutions', 'institutions', 'waqf_indicators', 'waqf_evaluations', 'waqf_responses', 'waqf_compliance',
+     'waqf_improvements', 'waqf_risks', 'waqf_financials', 'waqf_settings', 'waqf_accounts', 'waqf_feedback',
+     'waqf_user', 'waqf_role'].forEach(k => localStorage.removeItem(k));
+  } catch { /* ignore */ }
+};
+
+export const changePassword = async (current: string, next: string) => {
+  await request('POST', '/auth/change-password', { current, next });
+  session = { ...session, must_change_password: false };
+};
+
+// كان يُستخدم لإعادة القراءة من localStorage — البيانات الآن في الذاكرة ومحدّثة
+export const clearCache = (..._keys: string[]) => { /* no-op */ };
+
+// ─── المؤسسات ───────────────────────────────────────────────────────────────
 export const getInstitutions = (): Institution[] => data<Institution>(DB_KEYS.INSTITUTIONS);
 
-export const clearSystemCache = () => {
-    try {
-        Object.values(DB_KEYS).forEach(key => {
-            localStorage.removeItem(key);
-            if (cache[key]) delete cache[key];
-        });
-        fetch(`${API}/reset`, { method: 'DELETE' })
-          .finally(() => { window.location.href = "/"; })
-          .catch(() => { window.location.href = "/"; });
-    } catch (e) {
-        alert("حدث خطأ أثناء مسح الذاكرة.");
-    }
-};
-
-export const performSmartCleanup = () => {
-  try {
-    console.log("Forcing Smart Cleanup (Reset to Lite Mode)...");
-    Object.values(DB_KEYS).forEach(key => {
-        localStorage.removeItem(key);
-        if (cache[key]) delete cache[key];
-    });
-    initializeDatabase();
-    setTimeout(() => {
-        alert(`✅ تم تسريع النظام بنجاح!\n\nتم الاحتفاظ ببيانات 5 مؤسسات فقط للعرض.\nباقي المؤسسات تظهر كأرشيف (اسم فقط).`);
-        window.location.href = "/";
-    }, 100);
-  } catch (error) {
-    console.error("Cleanup Failed:", error);
-    alert("حدث خطأ أثناء محاولة تسريع النظام.");
-  }
-};
-
-export const saveInstitution = (inst: Institution) => {
-  const list = getInstitutions();
-  const index = list.findIndex(i => i.id === inst.id);
-  if (index >= 0) list[index] = inst; else list.push(inst);
-  save(DB_KEYS.INSTITUTIONS, list);
+// يعيد بيانات الدخول إذا أضاف المدير مؤسسة جديدة
+export const saveInstitution = async (inst: Institution): Promise<InstitutionAccount | null> => {
+  const r = await upsert(DB_KEYS.INSTITUTIONS, inst);
+  return r?.account || null;
 };
 export const deleteInstitution = (id: string) => {
-  const list = getInstitutions().filter(i => i.id !== id);
-  save(DB_KEYS.INSTITUTIONS, list);
+  Object.keys(cache).forEach(k => { if (k !== DB_KEYS.INSTITUTIONS) cache[k] = cache[k].filter((x: any) => x.institution_id !== id); });
+  return remove(DB_KEYS.INSTITUTIONS, id);
 };
+
+// ─── القوائم المالية ────────────────────────────────────────────────────────
 export const getFinancialRecords = (instId?: string): FinancialRecord[] => {
   const all = data<FinancialRecord>(DB_KEYS.FINANCIALS);
-  if (instId) return all.filter(f => f.institution_id === instId);
-  return all;
+  return instId ? all.filter(f => f.institution_id === instId) : all;
 };
 export const analyzeFinancialHealth = (record: FinancialRecord) => {
   const flags: string[] = [], errors: string[] = [];
@@ -328,145 +191,93 @@ export const analyzeFinancialHealth = (record: FinancialRecord) => {
   if (record.net_waqf_assets < 0) flags.push('خطر حرج: تآكل رأس المال.');
   return { isValid: errors.length === 0, status: flags.length > 0 ? 'Flagged' : 'Submitted' as const, flags, errors };
 };
-export const saveFinancialRecord = (record: FinancialRecord) => {
-  const list = data<FinancialRecord>(DB_KEYS.FINANCIALS);
-  const index = list.findIndex(r => r.id === record.id);
-  if (index >= 0) list[index] = record; else list.push(record);
-  save(DB_KEYS.FINANCIALS, list);
+export const saveFinancialRecord = (record: FinancialRecord) => upsert(DB_KEYS.FINANCIALS, record);
+export const deleteFinancialRecord = (id: string) => remove(DB_KEYS.FINANCIALS, id);
+
+// ─── المؤشرات ───────────────────────────────────────────────────────────────
+export const getIndicators = (): Indicator[] => {
+  const s = data<Indicator>(DB_KEYS.INDICATORS);
+  if (s.length) return s;
+  if (session.role === 'admin') {
+    DEFAULT_INDICATORS.forEach(i => upsert(DB_KEYS.INDICATORS, i));
+    return data<Indicator>(DB_KEYS.INDICATORS);
+  }
+  return DEFAULT_INDICATORS;
 };
-export const deleteFinancialRecord = (id: string) => {
-  const list = data<FinancialRecord>(DB_KEYS.FINANCIALS).filter(r => r.id !== id);
-  save(DB_KEYS.FINANCIALS, list);
+export const saveIndicators = (list: Indicator[]) => {
+  const keep = new Set(list.map(i => i.id));
+  data<Indicator>(DB_KEYS.INDICATORS).filter(i => !keep.has(i.id)).forEach(i => remove(DB_KEYS.INDICATORS, i.id));
+  list.forEach(i => upsert(DB_KEYS.INDICATORS, i));
 };
-export const getIndicators = () => {
-  let s = data<Indicator>(DB_KEYS.INDICATORS);
-  if (!s.length) { save(DB_KEYS.INDICATORS, DEFAULT_INDICATORS); s = DEFAULT_INDICATORS; }
-  return s;
-};
-export const saveIndicators = (i: Indicator[]) => save(DB_KEYS.INDICATORS, i);
+
+// ─── التقييمات والإجابات ────────────────────────────────────────────────────
 export const getEvaluations = (y?: number) => { const e = data<Evaluation>(DB_KEYS.EVALUATIONS); return y ? e.filter(x => x.cycle_year === y) : e; };
 export const getEvaluationByInstAndYear = (id: string, y: number) => getEvaluations().find(e => e.institution_id === id && e.cycle_year === y);
-export const saveEvaluation = (e: Evaluation) => { const l = getEvaluations(); const i = l.findIndex(x => x.id === e.id); if (i >= 0) l[i] = e; else l.push(e); save(DB_KEYS.EVALUATIONS, l); };
+export const saveEvaluation = (e: Evaluation) => upsert(DB_KEYS.EVALUATIONS, e);
 export const getPendingEvaluationsCount = () => getEvaluations(CURRENT_YEAR).filter(e => e.workflow_status === 'submitted').length;
 export const getResponses = (id: string) => data<Response>(DB_KEYS.RESPONSES).filter(r => r.evaluation_id === id);
 export const getAllResponses = () => data<Response>(DB_KEYS.RESPONSES);
-export const saveResponse = (r: Response) => { const l = data<Response>(DB_KEYS.RESPONSES); const i = l.findIndex(x => x.evaluation_id === r.evaluation_id && x.indicator_id === r.indicator_id); if (i >= 0) l[i] = { ...l[i], ...r }; else l.push({ ...r, id: generateId() }); save(DB_KEYS.RESPONSES, l); };
+export const saveResponse = (r: Response) => {
+  const existing = data<Response>(DB_KEYS.RESPONSES).find(x => x.evaluation_id === r.evaluation_id && x.indicator_id === r.indicator_id);
+  const merged = existing ? { ...existing, ...r, id: existing.id } : { ...r, id: r.id || generateId() };
+  return upsert(DB_KEYS.RESPONSES, merged);
+};
+
+// ─── الامتثال والمخاطر والتحسين ─────────────────────────────────────────────
 export const getComplianceRecords = (y?: number) => { const r = data<ComplianceRecord>(DB_KEYS.COMPLIANCE); return y ? r.filter(x => x.cycle_year === y) : r; };
 export const getComplianceByInstAndYear = (id: string, y: number) => getComplianceRecords(y).find(r => r.institution_id === id);
-export const saveComplianceRecord = (r: ComplianceRecord) => { const l = data<ComplianceRecord>(DB_KEYS.COMPLIANCE); const i = l.findIndex(x => x.id === r.id); if (i >= 0) l[i] = r; else l.push(r); save(DB_KEYS.COMPLIANCE, l); };
+export const saveComplianceRecord = (r: ComplianceRecord) => upsert(DB_KEYS.COMPLIANCE, r);
 export const getRisks = (id?: string) => { const a = data<RiskRegisterItem>(DB_KEYS.RISKS); return id ? a.filter(r => r.institution_id === id) : a; };
-export const saveRisk = (r: RiskRegisterItem) => { const l = data<RiskRegisterItem>(DB_KEYS.RISKS); const i = l.findIndex(x => x.id === r.id); if (i >= 0) l[i] = r; else l.push(r); save(DB_KEYS.RISKS, l); };
-export const deleteRisk = (id: string) => save(DB_KEYS.RISKS, data<RiskRegisterItem>(DB_KEYS.RISKS).filter(x => x.id !== id));
+export const saveRisk = (r: RiskRegisterItem) => upsert(DB_KEYS.RISKS, r);
+export const deleteRisk = (id: string) => remove(DB_KEYS.RISKS, id);
 export const getImprovements = (id: string) => data<ImprovementItem>(DB_KEYS.IMPROVEMENTS).filter(i => i.evaluation_id === id);
-export const saveImprovement = (i: ImprovementItem) => { const l = data<ImprovementItem>(DB_KEYS.IMPROVEMENTS); const x = l.findIndex(z => z.id === i.id); if (x >= 0) l[x] = i; else l.push(i); save(DB_KEYS.IMPROVEMENTS, l); };
-export const deleteImprovement = (id: string) => save(DB_KEYS.IMPROVEMENTS, data<ImprovementItem>(DB_KEYS.IMPROVEMENTS).filter(x => x.id !== id));
-export const getSettings = () => { const s = localStorage.getItem(DB_KEYS.SETTINGS); return safeParse(s, { darkMode: false, orgName: 'وزارة الأوقاف والشؤون الدينية' }); };
+export const saveImprovement = (i: ImprovementItem) => upsert(DB_KEYS.IMPROVEMENTS, i);
+export const deleteImprovement = (id: string) => remove(DB_KEYS.IMPROVEMENTS, id);
 
-// ─── Institution Accounts ──────────────────────────────────────────────────
-export const getAccounts = (): InstitutionAccount[] => data<InstitutionAccount>(DB_KEYS.ACCOUNTS);
-
-export const initAccounts = () => {
-  const existing = data<InstitutionAccount>(DB_KEYS.ACCOUNTS);
-  const insts = getInstitutions();
-  const existingIds = new Set(existing.map(a => a.institution_id));
-  const newAccounts: InstitutionAccount[] = [...existing];
-  // Start counter from the highest existing code number + 1
-  let counter = existing.length > 0
-    ? Math.max(...existing.map(a => parseInt(a.login_code.replace('WQ', '')) || 0)) + 1
-    : 1;
-  for (const inst of insts) {
-    if (!existingIds.has(inst.id)) {
-      newAccounts.push({
-        institution_id: inst.id,
-        login_code: `WQ${String(counter).padStart(3, '0')}`,
-        password: '1234',
-      });
-      counter++;
-    }
-  }
-  if (newAccounts.length > existing.length) {
-    save(DB_KEYS.ACCOUNTS, newAccounts);
-  }
-};
-
-export const authenticateInstitution = (loginCode: string, password: string): Institution | null => {
-  const code = loginCode.trim().toUpperCase();
-  const account = getAccounts().find(a => a.login_code.toUpperCase() === code && a.password === password.trim());
-  if (!account) return null;
-  return getInstitutions().find(i => i.id === account.institution_id) ?? null;
-};
-
-// ─── System Feedback ───────────────────────────────────────────────────────
-export const getFeedback = (): SystemFeedback[] => data<SystemFeedback>(DB_KEYS.FEEDBACK);
-export const saveFeedback = (f: SystemFeedback) => {
-  const list = getFeedback();
-  list.push(f);
-  save(DB_KEYS.FEEDBACK, list);
-};
-export const markFeedbackRead = (id: string) => {
-  const list = getFeedback().map(f => f.id === id ? { ...f, is_read: true } : f);
-  save(DB_KEYS.FEEDBACK, list);
-};
-export const getUnreadFeedbackCount = () => getFeedback().filter(f => !f.is_read).length;
+// ─── الإعدادات ──────────────────────────────────────────────────────────────
+export const getSettings = () => ({ ...DEFAULT_SETTINGS, ...(settingsCache || {}) });
 export const saveSettings = (s: any) => {
-  localStorage.setItem(DB_KEYS.SETTINGS, JSON.stringify(s));
-  fetch(`${API}/${DB_KEYS.SETTINGS}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(s),
-  }).catch(console.warn);
+  settingsCache = { ...s, id: 'main' };
+  enqueue(() => request('PUT', `/records/${DB_KEYS.SETTINGS}/main`, settingsCache));
   window.dispatchEvent(new Event('settingsChanged'));
 };
 
-// ─── Reset Institution (إعادة تعيين المؤسسة للوضع الأولي) ─────────────────
-export const resetInstitution = (id: string) => {
-  // 1. إعادة الملف الشخصي إلى غير مكتمل
-  const insts = getInstitutions();
-  const inst = insts.find(i => i.id === id);
-  if (inst) {
-    const reset: Institution = {
-      ...inst,
-      profile_completed: false,
-      contact_phone: '',
-      email: '',
-      establishment_date: '',
-      license_number: '',
-      manager_name: '',
-      declaration_date: undefined,
-      commercial_record_number: undefined,
-      establishment_decision_doc: undefined,
-      documents: [],
-      capital_omr: 0,
-      employees_omani: 0,
-      employees_non_omani: 0,
-      employees_seconded: 0,
-    };
-    const updated = insts.map(i => i.id === id ? reset : i);
-    save(DB_KEYS.INSTITUTIONS, updated);
-  }
+// ─── حسابات المؤسسات (للمدير فقط) ───────────────────────────────────────────
+export interface AccountSummary { institution_id: string; login_code: string; must_change: boolean; updated_at: string; }
+export const fetchAccounts = (): Promise<AccountSummary[]> => request('GET', '/admin/accounts');
+export const resetAccountPassword = (institutionId: string): Promise<InstitutionAccount> =>
+  request('POST', `/admin/accounts/${encodeURIComponent(institutionId)}/reset-password`);
+export const resetAllPasswords = (): Promise<InstitutionAccount[]> => request('POST', '/admin/accounts/reset-all');
 
-  // 2. حذف السجلات المالية
-  const financials = data<FinancialRecord>(DB_KEYS.FINANCIALS).filter(f => f.institution_id !== id);
-  save(DB_KEYS.FINANCIALS, financials);
+// ─── الملاحظات ──────────────────────────────────────────────────────────────
+export const getFeedback = (): SystemFeedback[] => data<SystemFeedback>(DB_KEYS.FEEDBACK);
+export const saveFeedback = (f: SystemFeedback) => upsert(DB_KEYS.FEEDBACK, f);
+export const markFeedbackRead = (id: string) => {
+  const f = getFeedback().find(x => x.id === id);
+  if (f) upsert(DB_KEYS.FEEDBACK, { ...f, is_read: true });
+};
+export const getUnreadFeedbackCount = () => getFeedback().filter(f => !f.is_read).length;
 
-  // 3. حذف تقييمات المؤسسة + الردود المرتبطة بها
-  const allEvals = data<Evaluation>(DB_KEYS.EVALUATIONS);
-  const instEvalIds = new Set(allEvals.filter(e => e.institution_id === id).map(e => e.id));
-  save(DB_KEYS.EVALUATIONS, allEvals.filter(e => e.institution_id !== id));
-  const responses = data<Response>(DB_KEYS.RESPONSES).filter(r => !instEvalIds.has(r.evaluation_id));
-  save(DB_KEYS.RESPONSES, responses);
-  const improvements = data<ImprovementItem>(DB_KEYS.IMPROVEMENTS).filter(i => !instEvalIds.has(i.evaluation_id));
-  save(DB_KEYS.IMPROVEMENTS, improvements);
-
-  // 4. حذف سجلات الامتثال
-  const compliance = data<ComplianceRecord>(DB_KEYS.COMPLIANCE).filter(c => c.institution_id !== id);
-  save(DB_KEYS.COMPLIANCE, compliance);
-
-  // 5. حذف سجل المخاطر
-  const risks = data<RiskRegisterItem>(DB_KEYS.RISKS).filter(r => r.institution_id !== id);
-  save(DB_KEYS.RISKS, risks);
+// ─── إعادة مؤسسة للوضع الأولي (للمدير) ──────────────────────────────────────
+export const resetInstitution = async (id: string) => {
+  await writeQueue;
+  await request('POST', `/admin/institutions/${encodeURIComponent(id)}/reset`);
+  await loadData();
 };
 
+// ─── النسخ الاحتياطي (للمدير) ───────────────────────────────────────────────
+export const exportBackup = async () => {
+  await writeQueue;
+  return request('GET', '/admin/export');
+};
+export const importBackup = async (backup: any) => {
+  await writeQueue;
+  const r = await request('POST', '/admin/import', backup);
+  await loadData();
+  return r;
+};
+
+// ─── تقدم المؤسسة في خطوات العمل ────────────────────────────────────────────
 export const getInstitutionProgress = (id: string | null) => {
   if (!id) return { dataComplete: false, financialsDone: false, evalFinalized: false, complianceDone: false, workflowStatus: 'draft' as const, isLocked: false };
   const i = getInstitutions().find(x => x.id === id);

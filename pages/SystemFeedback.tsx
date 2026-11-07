@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { getFeedback, markFeedbackRead, getAccounts, getInstitutions, resetInstitution } from '../services/db';
-import { SystemFeedback, InstitutionAccount, Institution } from '../types';
+import { getFeedback, markFeedbackRead, fetchAccounts, resetAccountPassword, resetAllPasswords, getInstitutions, resetInstitution, AccountSummary } from '../services/db';
+import { useUi } from '../contexts/UiContext';
+import { SystemFeedback, Institution } from '../types';
 import { MessageSquare, Eye, KeyRound, Copy, CheckCircle, Filter, RotateCcw, AlertTriangle } from 'lucide-react';
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -15,7 +16,10 @@ const CATEGORY_COLORS: Record<string, string> = {
 const SystemFeedbackPage: React.FC = () => {
   const [tab, setTab] = useState<'feedback' | 'accounts'>('feedback');
   const [feedbackList, setFeedbackList] = useState<SystemFeedback[]>([]);
-  const [accounts, setAccounts] = useState<InstitutionAccount[]>([]);
+  const [accounts, setAccounts] = useState<AccountSummary[]>([]);
+  const [confirmAll, setConfirmAll] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const { showToast } = useUi();
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -25,9 +29,33 @@ const SystemFeedbackPage: React.FC = () => {
 
   useEffect(() => {
     setFeedbackList([...getFeedback()].reverse());
-    setAccounts(getAccounts());
     setInstitutions(getInstitutions());
+    if (tab === 'accounts') fetchAccounts().then(setAccounts).catch(() => setAccounts([]));
   }, [tab]);
+
+  const withNames = (rows: { institution_id: string; login_code: string; password: string }[]) =>
+    rows.map(r => ({ ...r, name: getInstName(r.institution_id) }));
+
+  const handleNewPassword = async (instId: string) => {
+    setBusy(true);
+    try {
+      const r = await resetAccountPassword(instId);
+      window.dispatchEvent(new CustomEvent('showCredentials', { detail: { title: 'كلمة مرور جديدة', accounts: withNames([r]) } }));
+      setAccounts(await fetchAccounts());
+    } catch (e: any) { showToast(e?.message || 'تعذر إصدار كلمة المرور', 'error'); }
+    finally { setBusy(false); }
+  };
+
+  const handleAllPasswords = async () => {
+    setBusy(true);
+    setConfirmAll(false);
+    try {
+      const rows = await resetAllPasswords();
+      window.dispatchEvent(new CustomEvent('showCredentials', { detail: { title: `كلمات مرور جديدة لـ ${rows.length} مؤسسة`, accounts: withNames(rows) } }));
+      setAccounts(await fetchAccounts());
+    } catch (e: any) { showToast(e?.message || 'تعذر إصدار كلمات المرور', 'error'); }
+    finally { setBusy(false); }
+  };
 
   const handleRead = (id: string) => {
     markFeedbackRead(id);
@@ -43,8 +71,8 @@ const SystemFeedbackPage: React.FC = () => {
 
   const getInstName = (instId: string) => institutions.find(i => i.id === instId)?.name ?? 'غير محدد';
 
-  const handleReset = (instId: string) => {
-    resetInstitution(instId);
+  const handleReset = async (instId: string) => {
+    try { await resetInstitution(instId); } catch (e: any) { showToast(e?.message || 'تعذرت الإعادة', 'error'); return; }
     setInstitutions(getInstitutions());
     setConfirmResetId(null);
     setResetDone(instId);
@@ -165,9 +193,27 @@ const SystemFeedbackPage: React.FC = () => {
 
       {tab === 'accounts' && (
         <div>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 text-sm text-amber-800">
-            هذه بيانات الدخول التجريبية لكل مؤسسة. أرسل رمز الدخول وكلمة المرور للمؤسسة عبر قناة آمنة.
+          <div className="flex flex-col md:flex-row md:items-center gap-3 mb-4">
+            <div className="flex-1 bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800">
+              كلمات المرور محفوظة مشفّرة ولا يمكن عرضها. عند إصدار كلمة مرور جديدة تظهر لك مرة واحدة، فانسخها وسلّمها للمؤسسة عبر قناة آمنة. وتُلزم المؤسسة بتغييرها عند أول دخول.
+            </div>
+            <button
+              disabled={busy}
+              onClick={() => setConfirmAll(true)}
+              className="bg-navy-900 hover:bg-navy-800 disabled:opacity-60 text-white font-bold px-4 py-3 rounded-xl flex items-center justify-center gap-2 whitespace-nowrap"
+            >
+              <KeyRound size={16} /> إصدار كلمات مرور لكل المؤسسات
+            </button>
           </div>
+          {confirmAll && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4 text-sm text-red-800 flex flex-col md:flex-row md:items-center gap-3">
+              <p className="flex-1">سيتم إلغاء كلمات المرور الحالية لكل المؤسسات وإصدار كلمات جديدة، وتُسجَّل المؤسسات المتصلة خروجاً. هل تريد المتابعة؟</p>
+              <div className="flex gap-2">
+                <button onClick={handleAllPasswords} className="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2 rounded-lg">نعم، أصدر</button>
+                <button onClick={() => setConfirmAll(false)} className="bg-white border border-gray-300 font-bold px-4 py-2 rounded-lg">إلغاء</button>
+              </div>
+            </div>
+          )}
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[500px]">
@@ -195,9 +241,11 @@ const SystemFeedbackPage: React.FC = () => {
                     </td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1">
-                        <span className="font-mono bg-gray-100 px-2 py-1 rounded text-navy-900">{acc.password}</span>
-                        <button onClick={() => copyText(acc.password, `pass-${acc.institution_id}`)} className="text-gray-400 hover:text-teal-600 transition-colors">
-                          {copied === `pass-${acc.institution_id}` ? <CheckCircle size={14} className="text-teal-600" /> : <Copy size={14} />}
+                        <span className={`text-xs font-bold px-2 py-1 rounded ${acc.must_change ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-700'}`}>
+                          {acc.must_change ? 'مؤقتة' : 'غيّرتها المؤسسة'}
+                        </span>
+                        <button disabled={busy} onClick={() => handleNewPassword(acc.institution_id)} className="text-xs font-bold text-navy-800 border border-navy-200 bg-white hover:bg-navy-50 px-2 py-1 rounded-lg disabled:opacity-50">
+                          كلمة مرور جديدة
                         </button>
                       </div>
                     </td>

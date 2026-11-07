@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { getInstitutions, getEvaluations, getResponses, clearCache, resetInstitution, getAccounts } from '../services/db';
+import { getInstitutions, getEvaluations, getResponses, clearCache, resetInstitution } from '../services/db';
 import { Institution, Evaluation } from '../types';
 import { CURRENT_YEAR } from '../constants';
 import { Eye, Clock, RefreshCw, RotateCcw, AlertTriangle, CheckCircle } from 'lucide-react';
@@ -45,9 +45,8 @@ const ApprovalRequests: React.FC = () => {
     navigate('/reports');
   };
 
-  const handleReset = (instId: string) => {
-    resetInstitution(instId);
-    clearCache();
+  const handleReset = async (instId: string) => {
+    try { await resetInstitution(instId); } catch (e: any) { showToast(e?.message || 'تعذرت الإعادة', 'error'); return; }
     setConfirmResetId(null);
     setResetDone(instId);
     setTimeout(() => {

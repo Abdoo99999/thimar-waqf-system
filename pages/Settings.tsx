@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Save, Download, Upload, Activity, User, Calendar, FileText, Zap, RefreshCw, Trash2, RotateCcw } from 'lucide-react';
-import { getSettings, saveSettings, clearSystemCache, performSmartCleanup } from '../services/db';
+import { getSettings, saveSettings, refreshData, exportBackup, importBackup } from '../services/db';
 import { useUi } from '../contexts/UiContext';
 
 // Mock Data for Audit Log
@@ -38,44 +38,47 @@ const Settings: React.FC = () => {
       showToast('تم حفظ الإعدادات بنجاح', 'success');
   };
 
-  // --- (تعديل هام) دوال التنظيف تعمل مباشرة بدون رسائل تأكيد لأن المتصفح يمنعها ---
-  
-  const handleSmartCleanup = () => {
-      // تم إزالة window.confirm لتجاوز الحظر الأمني
-      performSmartCleanup();
+  const [restoring, setRestoring] = useState(false);
+
+  // تحديث البيانات من الخادم (بدلاً من أدوات تنظيف الذاكرة القديمة)
+  const handleRefresh = async () => {
+      try { await refreshData(); showToast('تم تحديث البيانات من الخادم', 'success'); }
+      catch (e: any) { showToast(e?.message || 'تعذر التحديث', 'error'); }
   };
 
-  const handleFactoryReset = () => {
-      // تم إزالة window.confirm لتجاوز الحظر الأمني
-      clearSystemCache();
-  };
-
-  const exportData = () => {
-      const data = { ...localStorage };
-      const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `waqf-backup-${new Date().toISOString().split('T')[0]}.json`;
-      a.click();
-      showToast('تم تصدير النسخة الاحتياطية', 'success');
+  // نسخة احتياطية كاملة من قاعدة البيانات في الخادم
+  const exportData = async () => {
+      try {
+          const data = await exportBackup();
+          const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `waqf-backup-${new Date().toISOString().split('T')[0]}.json`;
+          a.click();
+          URL.revokeObjectURL(url);
+          showToast('تم تصدير النسخة الاحتياطية', 'success');
+      } catch (e: any) { showToast(e?.message || 'تعذر التصدير', 'error'); }
   };
 
   const importData = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
+      e.target.value = '';
       if (!file) return;
+      if (!window.confirm('ستُستبدل كل بيانات النظام الحالية بمحتوى هذا الملف. هل تريد المتابعة؟')) return;
       const reader = new FileReader();
-      reader.onload = (evt) => {
+      reader.onload = async (evt) => {
+          setRestoring(true);
           try {
               const data = JSON.parse(evt.target?.result as string);
-              Object.keys(data).forEach(key => {
-                  localStorage.setItem(key, data[key]);
-              });
+              const r = await importBackup(data);
               showToast('تم استعادة البيانات بنجاح', 'success');
-              setTimeout(() => window.location.reload(), 2000);
-          } catch (err) {
-              showToast('خطأ في الملف', 'error');
-          }
+              if (r?.new_accounts?.length) {
+                  window.dispatchEvent(new CustomEvent('showCredentials', { detail: { title: 'حسابات جديدة للمؤسسات المستعادة', accounts: r.new_accounts } }));
+              }
+          } catch (err: any) {
+              showToast(err?.message || 'خطأ في الملف', 'error');
+          } finally { setRestoring(false); }
       };
       reader.readAsText(file);
   };
@@ -109,52 +112,16 @@ const Settings: React.FC = () => {
         </div>
       </div>
 
-      {/* Performance & Maintenance */}
+      {/* Data refresh */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="p-6 border-b border-gray-100 flex justify-between items-center">
-             <div>
-                <h3 className="font-bold text-lg mb-2 text-teal-700 flex items-center gap-2">
-                    <Zap size={20}/> صيانة النظام والأداء (Memory & Cache)
-                </h3>
-                <p className="text-gray-500 text-sm">أدوات لتحسين سرعة النظام وحل مشاكل البطء</p>
-             </div>
-        </div>
-        <div className="p-6 bg-teal-50/30">
-             <div className="flex flex-col gap-6">
-                 {/* Option 1: Smart Speed Up */}
-                 <div className="flex flex-col md:flex-row gap-4 items-center justify-between border-b border-teal-100 pb-6">
-                     <div className="flex-1">
-                         <p className="font-bold text-teal-900 mb-1 flex items-center gap-2"><RefreshCw size={18}/> بدء التسريع (موصى به)</p>
-                         <p className="text-sm text-gray-600">
-                             استخدم هذا الخيار إذا كان النظام بطيئاً. سيقوم بحذف البيانات الزائدة وإبقاء أهم 5 مؤسسات فقط للعمل عليها.
-                         </p>
-                     </div>
-                     <button 
-                       type="button"
-                       onClick={handleSmartCleanup}
-                       className="bg-teal-600 text-white px-6 py-3 rounded-xl hover:bg-teal-700 shadow-md flex items-center gap-2 font-bold whitespace-nowrap transition-transform hover:scale-105 active:scale-95"
-                     >
-                         <Zap size={18} /> تطبيق التسريع الآن
-                     </button>
-                 </div>
-
-                 {/* Option 2: Factory Reset */}
-                 <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-                     <div className="flex-1">
-                         <p className="font-bold text-red-800 mb-1 flex items-center gap-2"><Trash2 size={18}/> إعادة تعيين كاملة (Factory Reset)</p>
-                         <p className="text-sm text-gray-600">
-                             إذا واجهت أخطاء برمجية أو توقف للنظام، استخدم هذا الخيار لمسح الذاكرة تماماً وإعادة تحميل البيانات الافتراضية.
-                         </p>
-                     </div>
-                     <button 
-                       type="button"
-                       onClick={handleFactoryReset}
-                       className="bg-white border border-red-300 text-red-600 px-6 py-3 rounded-xl hover:bg-red-50 hover:text-red-700 flex items-center gap-2 font-bold whitespace-nowrap transition-colors"
-                     >
-                         <RotateCcw size={18} /> إعادة ضبط المصنع
-                     </button>
-                 </div>
-             </div>
+        <div className="p-6 flex flex-col md:flex-row gap-4 items-center justify-between">
+            <div className="flex-1">
+                <p className="font-bold text-teal-900 mb-1 flex items-center gap-2"><RefreshCw size={18}/> تحديث البيانات</p>
+                <p className="text-sm text-gray-600">يجلب آخر ما أدخلته المؤسسات من الخادم دون إعادة تحميل الصفحة.</p>
+            </div>
+            <button type="button" onClick={handleRefresh} className="bg-teal-600 text-white px-6 py-3 rounded-xl hover:bg-teal-700 shadow-md flex items-center gap-2 font-bold whitespace-nowrap">
+                <RefreshCw size={18} /> تحديث الآن
+            </button>
         </div>
       </div>
 
@@ -162,15 +129,15 @@ const Settings: React.FC = () => {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-6 border-b border-gray-100">
             <h3 className="font-bold text-lg mb-2 text-blue-600">النسخ الاحتياطي واستعادة البيانات</h3>
-            <p className="text-gray-500 text-sm">حفظ نسخة من جميع البيانات محلياً</p>
+            <p className="text-gray-500 text-sm">تنزيل نسخة من كل بيانات النظام في الخادم، أو استعادتها. (كلمات المرور لا تدخل في النسخة)</p>
         </div>
         <div className="p-6 flex gap-4">
             <button onClick={exportData} className="border border-blue-600 text-blue-600 px-4 py-2 rounded-lg hover:bg-blue-50 flex items-center gap-2 transition-colors font-medium">
                 <Download size={18} /> تصدير قاعدة البيانات (JSON)
             </button>
             <label className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2 cursor-pointer transition-colors shadow-md font-medium">
-                <Upload size={18} /> استيراد قاعدة البيانات
-                <input type="file" accept=".json" className="hidden" onChange={importData} />
+                <Upload size={18} /> {restoring ? 'جاري الاستعادة...' : 'استيراد قاعدة البيانات'}
+                <input type="file" accept=".json" className="hidden" disabled={restoring} onChange={importData} />
             </label>
         </div>
       </div>

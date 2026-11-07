@@ -2,9 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Building2, ClipboardCheck, Scale, FileBarChart, Menu, X, ShieldAlert, Settings, LogOut, Lock, Send, Inbox, CheckCircle, RotateCcw, Landmark, RefreshCw, AlertTriangle, MessageSquarePlus, MessageSquare, KeyRound } from 'lucide-react';
-import { getSettings, getInstitutionProgress, getPendingEvaluationsCount, getEvaluationByInstAndYear, saveEvaluation, getUnreadFeedbackCount } from '../services/db';
+import { getSession, getSettings, getInstitutionProgress, getPendingEvaluationsCount, getEvaluationByInstAndYear, saveEvaluation, getUnreadFeedbackCount } from '../services/db';
 import { CURRENT_YEAR } from '../constants';
 import { useUi } from '../contexts/UiContext';
+import { ChangePasswordModal, CredentialsModal } from './AccountModals';
 
 // Helper to determine if a route is locked
 // STRICT SEQUENTIAL LOGIC applied here to match App.tsx
@@ -181,6 +182,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, logout, user, role, currentWaqfId, showToast } = useUi();
   const location = useLocation();
   const navigate = useNavigate();
+  const [pwModal, setPwModal] = useState<'none' | 'optional' | 'forced'>(() => getSession().must_change_password ? 'forced' : 'none');
+
+  // بعد الدخول بكلمة مرور مؤقتة: إلزام المؤسسة بتغييرها
+  useEffect(() => {
+    if (isAuthenticated && getSession().must_change_password) setPwModal('forced');
+  }, [isAuthenticated, location.pathname]);
 
   // Auto-close sidebar on navigation (mobile)
   useEffect(() => {
@@ -282,6 +289,13 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                   />
               );
           })}
+          <button
+            onClick={() => setPwModal('optional')}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-300 text-gray-300 hover:bg-navy-800 hover:text-white mt-4"
+          >
+             <KeyRound size={20} />
+             <span className="font-medium">تغيير كلمة المرور</span>
+          </button>
           <button 
             onClick={logout}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-300 text-red-300 hover:bg-red-900/20 hover:text-red-200 hover:scale-105 mt-4 group"
@@ -340,6 +354,15 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           </div>
         </main>
       </div>
+
+      {pwModal !== 'none' && (
+        <ChangePasswordModal
+          forced={pwModal === 'forced'}
+          onClose={() => setPwModal('none')}
+          onDone={() => { setPwModal('none'); showToast('تم تغيير كلمة المرور بنجاح', 'success'); }}
+        />
+      )}
+      <CredentialsModal />
 
       {/* Overlay for mobile sidebar */}
       {sidebarOpen && (

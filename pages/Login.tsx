@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUi } from '../contexts/UiContext';
-import { authenticateInstitution } from '../services/db';
+import { loginInstitution } from '../services/db';
 import { Lock, Building2, ArrowRight, KeyRound, AlertTriangle } from 'lucide-react';
 
 const Login: React.FC = () => {
@@ -12,22 +12,20 @@ const Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
-    setTimeout(() => {
-      const institution = authenticateInstitution(loginCode, password);
-      if (institution) {
-        setWaqfContext(institution.id);
-        login(institution.name, 'user');
-        showToast(`مرحباً، ${institution.name}`, 'success');
-        navigate('/institutions', { replace: true });
-      } else {
-        showToast('رمز الدخول أو كلمة المرور غير صحيحة', 'error');
-      }
+    try {
+      const session = await loginInstitution(loginCode, password);
+      setWaqfContext(session.institution_id || '');
+      login(session.name || '', 'user');
+      showToast(`مرحباً، ${session.name}`, 'success');
+      navigate('/institutions', { replace: true });
+    } catch (err: any) {
+      showToast(err?.message || 'رمز الدخول أو كلمة المرور غير صحيحة', 'error');
+    } finally {
       setLoading(false);
-    }, 400);
+    }
   };
 
   return (

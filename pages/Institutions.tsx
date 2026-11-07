@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getInstitutions, saveInstitution, deleteInstitution, generateId, getInstitutionProgress, initAccounts, getAccounts } from '../services/db';
+import { getInstitutions, saveInstitution, deleteInstitution, generateId, getInstitutionProgress } from '../services/db';
 import { Institution, InstitutionType, InstitutionDocument } from '../types';
 import { GOVERNORATES, OMAN_LOCATIONS } from '../constants';
 import { Plus, Search, Edit2, Trash2, X, FileText, UploadCloud, Calendar, Hash, User, CheckCircle2, Phone, AlertCircle, Building, AlertTriangle, Briefcase, MapPin, Mail, DollarSign, Users, LayoutGrid, ChevronLeft, ChevronRight, Lock, Eye } from 'lucide-react';
@@ -58,7 +58,7 @@ const Institutions: React.FC = () => {
     }));
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (isFormLocked) {
@@ -117,15 +117,17 @@ const Institutions: React.FC = () => {
       created_at: formData.created_at || new Date().toISOString(),
     };
 
-    saveInstitution(newInst);
+    let newAccount = null;
+    try {
+      newAccount = await saveInstitution(newInst);
+    } catch {
+      return; // رسالة الخطأ تظهر تلقائياً
+    }
 
-    // إذا أضاف الأدمن مؤسسة جديدة، نولّد رمز دخول تلقائياً
+    // إذا أضاف الأدمن مؤسسة جديدة، ينشئ الخادم رمز دخول وكلمة مرور عشوائية تظهر مرة واحدة
     if (role === 'admin' && isNew) {
-      initAccounts();
-      const accounts = getAccounts();
-      const newAccount = accounts.find(a => a.institution_id === newInst.id);
       if (newAccount) {
-        showToast(`✅ تم إضافة المؤسسة. بيانات الدخول: رمز "${newAccount.login_code}" / كلمة المرور "1234"`, 'success');
+        window.dispatchEvent(new CustomEvent('showCredentials', { detail: { title: 'تمت إضافة المؤسسة', accounts: [{ ...newAccount, name: newInst.name }] } }));
       } else {
         showToast('تم إضافة المؤسسة بنجاح وسيظهر رمز دخولها في قائمة الحسابات.', 'success');
       }

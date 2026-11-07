@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUi } from '../contexts/UiContext';
+import { loginAdmin } from '../services/db';
 import { ShieldCheck, User, Lock, ArrowRight } from 'lucide-react';
 
 const AdminLogin: React.FC = () => {
@@ -16,15 +17,21 @@ const AdminLogin: React.FC = () => {
     }
   }, [isAuthenticated, role, navigate]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (username.trim().toLowerCase() === 'admin' && password === 'admin') {
+    setLoading(true);
+    try {
+      await loginAdmin(username, password);
       setWaqfContext('');
       login('مدير النظام', 'admin');
       showToast('مرحباً بك، مدير النظام', 'success');
       navigate('/dashboard', { replace: true });
-    } else {
-      showToast('بيانات الدخول غير صحيحة', 'error');
+    } catch (err: any) {
+      showToast(err?.message || 'بيانات الدخول غير صحيحة', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -55,7 +62,7 @@ const AdminLogin: React.FC = () => {
                 className="w-full p-3 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-navy-800 outline-none"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="admin"
+                placeholder="اسم المستخدم"
               />
             </div>
           </div>
@@ -75,7 +82,8 @@ const AdminLogin: React.FC = () => {
           </div>
           <button
             type="submit"
-            className="w-full bg-navy-900 hover:bg-navy-800 text-white font-bold py-3 rounded-lg shadow-lg flex items-center justify-center gap-2 transition-colors active:scale-95"
+            disabled={loading}
+            className="w-full disabled:opacity-60 bg-navy-900 hover:bg-navy-800 text-white font-bold py-3 rounded-lg shadow-lg flex items-center justify-center gap-2 transition-colors active:scale-95"
           >
             دخول لوحة التحكم <ArrowRight size={18} />
           </button>
