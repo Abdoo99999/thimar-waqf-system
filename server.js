@@ -113,9 +113,11 @@ app.use('/api', (req, res, next) => {
   if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
     const origin = req.headers.origin;
     if (origin) {
-      const host = req.headers['x-forwarded-host'] || req.headers.host;
-      try { if (new URL(origin).host !== host) return res.status(403).json({ error: 'origin' }); }
-      catch { return res.status(403).json({ error: 'origin' }); }
+      // نقبل الطلب إذا جاء من نفس الموقع (مباشرة أو عبر وكيل المعاينة في Replit)
+      const hosts = [req.headers.host, ...String(req.headers['x-forwarded-host'] || '').split(',')].map(h => (h || '').trim()).filter(Boolean);
+      let originHost = '';
+      try { originHost = new URL(origin).host; } catch { return res.status(403).json({ error: 'origin' }); }
+      if (!hosts.includes(originHost)) return res.status(403).json({ error: 'origin' });
     }
   }
   next();
