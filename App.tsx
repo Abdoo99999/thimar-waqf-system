@@ -85,8 +85,10 @@ const SequentialRoute: React.FC<{
   return <>{children}</>;
 };
 
-// الرابط الجذري يُظهر دائماً صفحة تسجيل دخول المؤسسات — بغض النظر عن أي جلسة سابقة
+// المدير المسجل يبقى داخل لوحة التحكم عند فتح الرابط الرئيسي.
 const HomeRedirect: React.FC = () => {
+  const { isAuthenticated, role } = useUi();
+  if (isAuthenticated && role === 'admin') return <Navigate to="/dashboard" replace />;
   return <Login />;
 };
 
@@ -159,7 +161,7 @@ const App: React.FC = () => {
         <Router>
           <Routes>
             {/* Institution login - outside Layout, no auth required */}
-            <Route path="/" element={<Login />} />
+            <Route path="/" element={<HomeRedirect />} />
             {/* Admin login - outside Layout, no auth required */}
             <Route path="/admin-login" element={<AdminLogin />} />
             {/* All other routes use Layout */}

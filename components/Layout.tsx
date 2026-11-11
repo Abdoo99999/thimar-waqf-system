@@ -228,7 +228,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   // Define All Routes with Roles
   const allNavItems = [
-    { to: '/', icon: LayoutDashboard, label: 'الرئيسية (القيادة)', roles: ['admin'] },
+    { to: '/dashboard', icon: LayoutDashboard, label: 'الرئيسية (القيادة)', roles: ['admin'] },
     { to: '/approval-requests', icon: Inbox, label: 'طلبات الاعتماد', roles: ['admin'], badge: pendingCount },
     { to: '/system-feedback', icon: MessageSquare, label: 'ملاحظات النظام', roles: ['admin'], badge: unreadFeedback },
     { to: '/institutions', icon: Building2, label: 'بيانات المؤسسة', roles: ['admin', 'user'] },
@@ -248,7 +248,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden font-sans text-right" dir="rtl">
       {/* Sidebar - Desktop */}
-      <aside className={`fixed inset-y-0 right-0 z-50 w-64 bg-navy-900 dark:bg-black text-white transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 shadow-2xl ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 right-0 z-50 w-64 flex flex-col bg-navy-900 dark:bg-black text-white transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 shadow-2xl ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="flex items-center justify-between p-4 border-b border-navy-800 min-h-[5rem]">
           <div className="flex items-center gap-3">
              <div className="w-10 h-10 min-w-[2.5rem] bg-white rounded-full p-1 overflow-hidden flex items-center justify-center shadow-md transition-transform hover:scale-110 duration-300">
@@ -277,7 +277,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             </div>
         </div>
         
-        <nav className="p-4 space-y-2 flex-1 overflow-y-auto mt-2 scrollbar-thin scrollbar-thumb-navy-700">
+        <nav className="p-4 space-y-2 flex-1 min-h-0 overflow-y-auto mt-2 scrollbar-thin scrollbar-thumb-navy-700">
           {navItems.map((item) => {
               const locked = isRouteLocked(item.to, role, progress);
               return (
@@ -304,7 +304,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
              <span className="font-medium">تسجيل الخروج</span>
           </button>
         </nav>
-        <div className="absolute bottom-0 w-full p-4 border-t border-navy-800 text-xs text-gray-400 text-center">
+        <div className="shrink-0 w-full p-4 border-t border-navy-800 text-xs text-gray-400 text-center">
           <p>{settings.orgName}</p>
         </div>
       </aside>
@@ -313,6 +313,16 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Header */}
         <header className="bg-white dark:bg-gray-800 shadow-sm z-10 border-b border-gray-200 dark:border-gray-700 min-h-[4rem] flex items-center px-4 md:px-6 justify-between print:hidden">
+            <button
+                type="button"
+                onClick={logout}
+                className="shrink-0 flex items-center gap-2 p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                aria-label="تسجيل الخروج"
+                title="تسجيل الخروج"
+            >
+                <LogOut size={20} />
+                <span className="hidden md:inline text-sm font-bold">تسجيل الخروج</span>
+            </button>
             <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-gray-600 dark:text-gray-200 transition-transform hover:scale-110 p-1 ml-2">
                 <Menu size={24} />
             </button>
