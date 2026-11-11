@@ -36,6 +36,7 @@ outputType = "webview"
 [[workflows.workflow]]
 name = "Start Backend"
 author = "agent"
+mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
