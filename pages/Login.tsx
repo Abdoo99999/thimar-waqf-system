@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUi } from '../contexts/UiContext';
-import { loginInstitution } from '../services/db';
+import { loginInstitution, loginAdmin } from '../services/db';
 import { Lock, Building2, ArrowRight, KeyRound, AlertTriangle } from 'lucide-react';
 
 const Login: React.FC = () => {
@@ -16,11 +16,19 @@ const Login: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      const session = await loginInstitution(loginCode, password);
-      setWaqfContext(session.institution_id || '');
-      login(session.name || '', 'user');
-      showToast(`مرحباً، ${session.name}`, 'success');
-      navigate('/institutions', { replace: true });
+      if (loginCode.trim().toLowerCase() === 'admin') {
+        await loginAdmin(loginCode.trim(), password);
+        setWaqfContext('');
+        login('مدير النظام', 'admin');
+        showToast('مرحباً بك، مدير النظام', 'success');
+        navigate('/dashboard', { replace: true });
+      } else {
+        const session = await loginInstitution(loginCode, password);
+        setWaqfContext(session.institution_id || '');
+        login(session.name || '', 'user');
+        showToast(`مرحباً، ${session.name}`, 'success');
+        navigate('/institutions', { replace: true });
+      }
     } catch (err: any) {
       showToast(err?.message || 'رمز الدخول أو كلمة المرور غير صحيحة', 'error');
     } finally {
@@ -82,7 +90,7 @@ const Login: React.FC = () => {
                 className="w-full p-3 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-600 outline-none transition-shadow uppercase"
                 value={loginCode}
                 onChange={(e) => setLoginCode(e.target.value)}
-                placeholder="مثال: WQ001"
+                placeholder="رمز المؤسسة (مثال: WQ001)"
                 dir="ltr"
               />
             </div>

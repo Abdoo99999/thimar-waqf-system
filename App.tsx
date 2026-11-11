@@ -6,7 +6,6 @@ import { UiProvider, useUi } from './contexts/UiContext';
 import { getInstitutionProgress, dbReady } from './services/db';
 import { Lock, Loader2 } from 'lucide-react';
 import Login from './pages/Login';
-import AdminLogin from './pages/AdminLogin';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Institutions = lazy(() => import('./pages/Institutions'));
@@ -163,7 +162,7 @@ const App: React.FC = () => {
             {/* Institution login - outside Layout, no auth required */}
             <Route path="/" element={<HomeRedirect />} />
             {/* Admin login - outside Layout, no auth required */}
-            <Route path="/admin-login" element={<AdminLogin />} />
+            <Route path="/admin-login" element={<Navigate to="/" replace />} />
             {/* All other routes use Layout */}
             <Route path="*" element={
               <Layout>
