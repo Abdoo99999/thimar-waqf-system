@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { getInstitutions, getComplianceRecords, saveComplianceRecord, generateId, getComplianceByInstAndYear, getRisks, saveRisk, deleteRisk, getInstitutionProgress } from '../services/db';
+import { getInstitutions, getComplianceRecords, saveComplianceRecord, generateId, getComplianceByInstAndYear, getRisks, saveRisk, deleteRisk, getInstitutionProgress, uploadFile, deleteFile } from '../services/db';
+import AttachmentLink, { ATTACHMENT_ACCEPT } from '../components/AttachmentLink';
 import { Institution, ComplianceRecord, RiskRegisterItem, CustomRequirement } from '../types';
 import { CURRENT_YEAR, calculateRiskScore } from '../constants';
 import { Save, AlertTriangle, CheckCircle, Info, ShieldAlert, Plus, Trash2, Scale, X, Building, Settings, Lock, Edit2, CheckSquare, AlertCircle, ArrowDown, Paperclip, FileText } from 'lucide-react';
@@ -146,13 +147,19 @@ const CompliancePage: React.FC = () => {
       showToast('تم إضافة المعيار الجديد', 'success');
   };
 
-  const handleRemoveRequirement = (id: string) => {
+  const handleRemoveRequirement = async (id: string) => {
       if(isLocked) return;
       if(confirm('هل أنت متأكد من حذف هذا المعيار؟')) {
+        try {
+        const doc = record.custom_requirements?.find(r => r.id === id)?.evidence_doc;
+        if (doc?.file_id) await deleteFile(doc.file_id);
         setRecord(prev => ({
             ...prev,
             custom_requirements: prev.custom_requirements?.filter(r => r.id !== id)
         }));
+        } catch (err: any) {
+            showToast(err.message, 'error');
+        }
       }
   };
 
@@ -185,11 +192,12 @@ const CompliancePage: React.FC = () => {
       }));
   };
 
-  const handleCoreEvidenceUpload = (key: string, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCoreEvidenceUpload = async (key: string, e: React.ChangeEvent<HTMLInputElement>) => {
       if (isLocked) return;
       if (e.target.files && e.target.files[0]) {
           const file = e.target.files[0];
-          const newDoc: InstitutionDocument = { id: generateId(), name: file.name, type: file.type, size: (file.size / 1024).toFixed(1) + ' KB', upload_date: new Date().toLocaleDateString('ar-OM') };
+          try {
+          const newDoc = await uploadFile(file, currentWaqfId);
           setRecord(prev => ({
               ...prev,
               core_evidence: {
@@ -198,39 +206,58 @@ const CompliancePage: React.FC = () => {
               }
           }));
           showToast('تم إرفاق الدليل بنجاح', 'success');
+          } catch (err: any) {
+              showToast(err.message, 'error');
+          }
       }
   };
 
-  const removeCoreEvidence = (key: string) => {
+  const removeCoreEvidence = async (key: string) => {
       if (isLocked) return;
+      try {
+      const doc = record.core_evidence?.[key];
+      if (doc?.file_id) await deleteFile(doc.file_id);
       setRecord(prev => {
           const newEvidence = { ...prev.core_evidence };
           delete newEvidence[key];
           return { ...prev, core_evidence: newEvidence };
       });
       showToast('تم حذف المرفق', 'info');
+      } catch (err: any) {
+          showToast(err.message, 'error');
+      }
   };
 
-  const handleCustomEvidenceUpload = (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCustomEvidenceUpload = async (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
       if (isLocked) return;
       if (e.target.files && e.target.files[0]) {
           const file = e.target.files[0];
-          const newDoc: InstitutionDocument = { id: generateId(), name: file.name, type: file.type, size: (file.size / 1024).toFixed(1) + ' KB', upload_date: new Date().toLocaleDateString('ar-OM') };
+          try {
+          const newDoc = await uploadFile(file, currentWaqfId);
           setRecord(prev => ({
               ...prev,
               custom_requirements: prev.custom_requirements?.map(r => r.id === id ? { ...r, evidence_doc: newDoc } : r)
           }));
           showToast('تم إرفاق الدليل بنجاح', 'success');
+          } catch (err: any) {
+              showToast(err.message, 'error');
+          }
       }
   };
 
-  const removeCustomEvidence = (id: string) => {
+  const removeCustomEvidence = async (id: string) => {
       if (isLocked) return;
+      try {
+      const doc = record.custom_requirements?.find(r => r.id === id)?.evidence_doc;
+      if (doc?.file_id) await deleteFile(doc.file_id);
       setRecord(prev => ({
           ...prev,
           custom_requirements: prev.custom_requirements?.map(r => r.id === id ? { ...r, evidence_doc: undefined } : r)
       }));
       showToast('تم حذف المرفق', 'info');
+      } catch (err: any) {
+          showToast(err.message, 'error');
+      }
   };
 
   // --- RISK HANDLERS ---
@@ -424,7 +451,7 @@ const CompliancePage: React.FC = () => {
                                                           {record.core_evidence?.[req.key] ? (
                                                               <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-md border border-orange-200">
                                                                   <FileText size={14} className="text-gray-500" />
-                                                                  <span className="text-xs text-gray-700 truncate max-w-[150px]">{record.core_evidence[req.key].name}</span>
+                                                                  <AttachmentLink doc={record.core_evidence[req.key]} />
                                                                   {!isLocked && (
                                                                       <button onClick={() => removeCoreEvidence(req.key)} className="text-red-500 hover:text-red-700 mr-2">
                                                                           <X size={14} />
@@ -434,7 +461,7 @@ const CompliancePage: React.FC = () => {
                                                           ) : (
                                                               <label className={`cursor-pointer bg-white border border-orange-300 text-orange-700 hover:bg-orange-100 px-4 py-1.5 rounded-md text-xs font-bold transition-colors ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                                                   إرفاق ملف
-                                                                  <input type="file" className="hidden" onChange={(e) => handleCoreEvidenceUpload(req.key, e)} disabled={isLocked} />
+                                                                  <input type="file" accept={ATTACHMENT_ACCEPT} className="hidden" onChange={(e) => handleCoreEvidenceUpload(req.key, e)} disabled={isLocked} />
                                                               </label>
                                                           )}
                                                       </div>
@@ -477,7 +504,7 @@ const CompliancePage: React.FC = () => {
                                                           {req.evidence_doc ? (
                                                               <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-md border border-orange-200">
                                                                   <FileText size={14} className="text-gray-500" />
-                                                                  <span className="text-xs text-gray-700 truncate max-w-[150px]">{req.evidence_doc.name}</span>
+                                                                  <AttachmentLink doc={req.evidence_doc} />
                                                                   {!isLocked && (
                                                                       <button onClick={() => removeCustomEvidence(req.id)} className="text-red-500 hover:text-red-700 mr-2">
                                                                           <X size={14} />
@@ -487,7 +514,7 @@ const CompliancePage: React.FC = () => {
                                                           ) : (
                                                               <label className={`cursor-pointer bg-white border border-orange-300 text-orange-700 hover:bg-orange-100 px-4 py-1.5 rounded-md text-xs font-bold transition-colors ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                                                   إرفاق ملف
-                                                                  <input type="file" className="hidden" onChange={(e) => handleCustomEvidenceUpload(req.id, e)} disabled={isLocked} />
+                                                                  <input type="file" accept={ATTACHMENT_ACCEPT} className="hidden" onChange={(e) => handleCustomEvidenceUpload(req.id, e)} disabled={isLocked} />
                                                               </label>
                                                           )}
                                                       </div>

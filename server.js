@@ -325,6 +325,7 @@ app.delete('/api/records/:collection/:id', requireAuth, wrap(async (req, res) =>
   if (collection === 'waqf_institutions') {
     await pool.query('DELETE FROM app_records WHERE institution_id = $1', [id]);
     await pool.query('DELETE FROM app_accounts WHERE institution_id = $1', [id]);
+    await pool.query('DELETE FROM app_files WHERE institution_id = $1', [id]);
   }
   res.json({ ok: true });
 }));
@@ -385,6 +386,7 @@ app.post('/api/admin/institutions/:id/reset', requireAdmin, wrap(async (req, res
     employees_seconded: 0, created_at: d.created_at || new Date().toISOString(),
   };
   await pool.query("DELETE FROM app_records WHERE institution_id = $1 AND collection NOT IN ('waqf_institutions','waqf_feedback')", [id]);
+  await pool.query('DELETE FROM app_files WHERE institution_id = $1', [id]);
   await pool.query("UPDATE app_records SET data = $1::jsonb, updated_at = now() WHERE collection = 'waqf_institutions' AND id = $2", [JSON.stringify(clean), id]);
   res.json({ ok: true });
 }));
@@ -416,6 +418,63 @@ app.post('/api/admin/import', requireAdmin, wrap(async (req, res) => {
   const { rows } = await pool.query("SELECT id FROM app_records WHERE collection = 'waqf_institutions' AND id NOT IN (SELECT institution_id FROM app_accounts)");
   for (const r of rows) created.push(await createAccount(r.id));
   res.json({ ok: true, new_accounts: created });
+}));
+
+// ─── الملفات المرفقة ───
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MIME_BY_EXT = {
+  pdf: 'application/pdf', doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
+  txt: 'text/plain; charset=utf-8', csv: 'text/csv; charset=utf-8',
+};
+const canAccessFile = (s, f) => s.role === 'admin' || f.institution_id === s.institution_id;
+
+app.post('/api/files', requireAuth, wrap(async (req, res) => {
+  const s = req.session;
+  const name = String(req.body?.name || '').slice(0, 255);
+  const institutionId = s.role === 'admin' ? String(req.body?.institution_id || '') : s.institution_id;
+  if (!institutionId) return res.status(400).json({ error: 'المؤسسة غير محددة' });
+  const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+  const mime = MIME_BY_EXT[ext];
+  if (!mime) return res.status(400).json({ error: 'نوع الملف غير مسموح. المسموح: PDF و Word و Excel و PowerPoint والصور' });
+  const buf = Buffer.from(String(req.body?.data || ''), 'base64');
+  if (!buf.length) return res.status(400).json({ error: 'الملف فارغ' });
+  if (buf.length > MAX_FILE_BYTES) return res.status(400).json({ error: 'حجم الملف أكبر من 10 ميغابايت' });
+  const id = newId();
+  await pool.query('INSERT INTO app_files (id, institution_id, name, mime, size, data) VALUES ($1,$2,$3,$4,$5,$6)',
+    [id, institutionId, name, mime, buf.length, buf]);
+  res.json({ id, name, size: buf.length });
+}));
+
+app.get('/api/files/:id', requireAuth, wrap(async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM app_files WHERE id = $1', [req.params.id]);
+  const f = rows[0];
+  if (!f) return res.status(404).json({ error: 'الملف غير موجود' });
+  if (!canAccessFile(req.session, f)) return res.status(403).json({ error: 'غير مسموح' });
+  const inline = /^(application\/pdf|image\/)/.test(f.mime) && req.query.download !== '1';
+  res.setHeader('Content-Type', f.mime);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(f.name)}`);
+  res.send(f.data);
+}));
+
+app.delete('/api/files/:id', requireAuth, wrap(async (req, res) => {
+  const { rows } = await pool.query('SELECT institution_id FROM app_files WHERE id = $1', [req.params.id]);
+  if (!rows[0]) return res.json({ ok: true });
+  if (!canAccessFile(req.session, rows[0])) return res.status(403).json({ error: 'غير مسموح' });
+  await pool.query('DELETE FROM app_files WHERE id = $1', [req.params.id]);
+  res.json({ ok: true });
+}));
+
+app.get('/api/admin/files', requireAdmin, wrap(async (req, res) => {
+  const inst = req.query.institution_id ? String(req.query.institution_id) : null;
+  const { rows } = await pool.query(
+    `SELECT id, institution_id, name, mime, size, created_at FROM app_files
+     ${inst ? 'WHERE institution_id = $1' : ''} ORDER BY created_at DESC`, inst ? [inst] : []);
+  res.json(rows);
 }));
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'غير موجود' }));
@@ -454,6 +513,16 @@ async function initDb() {
       session_version INTEGER NOT NULL DEFAULT 1
     );
     CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS app_files (
+      id TEXT PRIMARY KEY,
+      institution_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      mime TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      data BYTEA NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS app_files_inst_idx ON app_files (institution_id);
   `);
 
   // مفتاح توقيع الجلسات: من Secrets إن وُجد، وإلا يُنشأ مرة ويُحفظ في القاعدة

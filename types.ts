@@ -2,6 +2,7 @@ export type InstitutionType = 'وقفية عامة' | 'وقفية خاصة';
 
 export interface InstitutionDocument {
   id: string;
+  file_id?: string;
   name: string;
   type: string;
   size: string;

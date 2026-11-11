@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getInstitutions, saveInstitution, deleteInstitution, generateId, getInstitutionProgress } from '../services/db';
+import { getInstitutions, saveInstitution, deleteInstitution, generateId, getInstitutionProgress, uploadFile, deleteFile } from '../services/db';
+import AttachmentLink, { ATTACHMENT_ACCEPT } from '../components/AttachmentLink';
 import { Institution, InstitutionType, InstitutionDocument } from '../types';
 import { GOVERNORATES, OMAN_LOCATIONS } from '../constants';
 import { Plus, Search, Edit2, Trash2, X, FileText, UploadCloud, Calendar, Hash, User, CheckCircle2, Phone, AlertCircle, Building, AlertTriangle, Briefcase, MapPin, Mail, DollarSign, Users, LayoutGrid, ChevronLeft, ChevronRight, Lock, Eye } from 'lucide-react';
@@ -153,41 +154,49 @@ const Institutions: React.FC = () => {
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       if (isFormLocked) return;
       if (e.target.files && e.target.files[0]) {
           const file = e.target.files[0];
-          const newDoc: InstitutionDocument = {
-              id: generateId(),
-              name: file.name,
-              type: file.type,
-              size: (file.size / 1024).toFixed(1) + ' KB',
-              upload_date: new Date().toLocaleDateString('ar-OM')
-          };
+          try {
+          const newDoc = await uploadFile(file, role === 'admin' ? formData.id : currentWaqfId);
           setFormData(prev => ({
               ...prev,
               documents: [...(prev.documents || []), newDoc]
           }));
           showToast('تم إرفاق الملف بنجاح', 'info');
+          } catch (err: any) {
+              showToast(err.message, 'error');
+          }
       }
   };
 
-  const handleDecisionDocUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDecisionDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       if (isFormLocked) return;
       if (e.target.files && e.target.files[0]) {
           const file = e.target.files[0];
-          const newDoc: InstitutionDocument = {
-              id: generateId(),
-              name: file.name,
-              type: file.type,
-              size: (file.size / 1024).toFixed(1) + ' KB',
-              upload_date: new Date().toLocaleDateString('ar-OM')
-          };
+          try {
+          const newDoc = await uploadFile(file, role === 'admin' ? formData.id : currentWaqfId);
           setFormData(prev => ({
               ...prev,
               establishment_decision_doc: newDoc
           }));
           showToast('تم إرفاق قرار التأسيس بنجاح', 'info');
+          } catch (err: any) {
+              showToast(err.message, 'error');
+          }
+      }
+  };
+
+  const removeDocument = async (doc: InstitutionDocument, decision = false) => {
+      if (isFormLocked) return;
+      try {
+          if (doc.file_id) await deleteFile(doc.file_id);
+          setFormData(prev => decision
+              ? { ...prev, establishment_decision_doc: undefined }
+              : { ...prev, documents: prev.documents?.filter(d => d.id !== doc.id) });
+      } catch (err: any) {
+          showToast(err.message, 'error');
       }
   };
 
@@ -663,12 +672,12 @@ const Institutions: React.FC = () => {
                                     <div className="flex items-center gap-3">
                                         <div className="bg-teal-50 p-1.5 rounded text-teal-500"><FileText size={16} /></div>
                                         <div className="flex flex-col">
-                                            <span className="text-sm font-medium truncate max-w-[150px]">{formData.establishment_decision_doc.name}</span>
+                                            <AttachmentLink doc={formData.establishment_decision_doc} />
                                             <span className="text-[10px] text-gray-400">{formData.establishment_decision_doc.size}</span>
                                         </div>
                                     </div>
                                     {!isFormLocked && (
-                                        <button type="button" onClick={() => setFormData(p => ({...p, establishment_decision_doc: undefined}))} className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-1 rounded transition-colors">
+                                        <button type="button" onClick={() => removeDocument(formData.establishment_decision_doc!, true)} className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-1 rounded transition-colors">
                                             <X size={16} />
                                         </button>
                                     )}
@@ -677,7 +686,7 @@ const Institutions: React.FC = () => {
                                 <label className={`cursor-pointer bg-white border-2 border-dashed border-gray-300 hover:border-teal-500 hover:bg-teal-50/50 text-gray-500 hover:text-teal-700 p-4 rounded-xl flex flex-col items-center justify-center gap-2 transition-all group ${isFormLocked ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                     <UploadCloud size={20} className="text-gray-400 group-hover:text-teal-600" />
                                     <span className="font-bold text-xs">إرفاق قرار التأسيس</span>
-                                    <input type="file" className="hidden" onChange={handleDecisionDocUpload} disabled={isFormLocked} />
+                                    <input type="file" accept={ATTACHMENT_ACCEPT} className="hidden" onChange={handleDecisionDocUpload} disabled={isFormLocked} />
                                 </label>
                             )}
                         </div>
@@ -689,12 +698,12 @@ const Institutions: React.FC = () => {
                                 <div className="flex items-center gap-3">
                                     <div className="bg-blue-50 p-1.5 rounded text-blue-500"><FileText size={16} /></div>
                                     <div className="flex flex-col">
-                                        <span className="text-sm font-medium truncate max-w-[120px]">{doc.name}</span>
+                                        <AttachmentLink doc={doc} />
                                         <span className="text-[10px] text-gray-400">{doc.size}</span>
                                     </div>
                                 </div>
                                 {!isFormLocked && (
-                                    <button type="button" onClick={() => setFormData(p => ({...p, documents: p.documents?.filter((_, i) => i !== idx)}))} className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-1 rounded transition-colors">
+                                    <button type="button" onClick={() => removeDocument(doc)} className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-1 rounded transition-colors">
                                         <X size={16} />
                                     </button>
                                 )}
@@ -708,7 +717,7 @@ const Institutions: React.FC = () => {
                         </div>
                         <span className="font-bold text-sm">إرفاق الخطة السنوية للمؤسسة</span>
                         <span className="text-xs opacity-70">المستندات، السجل التجاري، التراخيص</span>
-                        <input type="file" className="hidden" onChange={handleFileUpload} disabled={isFormLocked} />
+                        <input type="file" accept={ATTACHMENT_ACCEPT} className="hidden" onChange={handleFileUpload} disabled={isFormLocked} />
                     </label>
                 </div>
 

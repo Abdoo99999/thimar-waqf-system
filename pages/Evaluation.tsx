@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { getInstitutions, getIndicators, saveIndicators, getEvaluationByInstAndYear, saveEvaluation, getResponses, saveResponse, generateId, getInstitutionProgress } from '../services/db';
+import { getInstitutions, getIndicators, saveIndicators, getEvaluationByInstAndYear, saveEvaluation, getResponses, saveResponse, generateId, getInstitutionProgress, uploadFile, deleteFile } from '../services/db';
+import AttachmentLink, { ATTACHMENT_ACCEPT } from '../components/AttachmentLink';
 import { Institution, Indicator, Evaluation, Response, InstitutionDocument } from '../types';
 import { CURRENT_YEAR, RATING_COLORS } from '../constants';
 import { Upload, Save, ChevronDown, ChevronUp, Paperclip, FileText, X, PlusCircle, PieChart as PieIcon, Trash2, MinusCircle, Building, SaveAll, Lock, CheckCircle2, Circle, Scale, Briefcase, ShieldCheck, Lightbulb, Globe, Layout, ChevronRight } from 'lucide-react';
@@ -124,11 +125,12 @@ const EvaluationPage: React.FC = () => {
       }
   };
 
-  const handleEvidenceUpload = (indicatorId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleEvidenceUpload = async (indicatorId: string, e: React.ChangeEvent<HTMLInputElement>) => {
       if (isLocked || !evaluation) return;
       if (e.target.files && e.target.files[0]) {
           const file = e.target.files[0];
-          const newDoc: InstitutionDocument = { id: generateId(), name: file.name, type: file.type, size: (file.size / 1024).toFixed(1) + ' KB', upload_date: new Date().toLocaleDateString('ar-OM') };
+          try {
+          const newDoc = await uploadFile(file, currentWaqfId);
           
           const existingResp = responses[indicatorId] || {
               id: generateId(),
@@ -144,16 +146,21 @@ const EvaluationPage: React.FC = () => {
               updated_at: new Date().toISOString()
           };
           
+          await saveResponse(newResp);
           setResponses(prev => ({ ...prev, [indicatorId]: newResp }));
-          saveResponse(newResp);
           showToast('تم إرفاق الدليل بنجاح', 'success');
+          } catch (err: any) {
+              showToast(err.message, 'error');
+          }
       }
   };
 
-  const removeEvidence = (indicatorId: string) => {
+  const removeEvidence = async (indicatorId: string) => {
       if (isLocked || !evaluation) return;
       const existingResp = responses[indicatorId];
       if (!existingResp) return;
+      try {
+      if (existingResp.evidence_doc?.file_id) await deleteFile(existingResp.evidence_doc.file_id);
 
       const newResp: Response = {
           ...existingResp,
@@ -161,29 +168,42 @@ const EvaluationPage: React.FC = () => {
           updated_at: new Date().toISOString()
       };
       
+      await saveResponse(newResp);
       setResponses(prev => ({ ...prev, [indicatorId]: newResp }));
-      saveResponse(newResp);
       showToast('تم حذف المرفق', 'info');
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (isLocked) return;
-      if (e.target.files && e.target.files[0] && evaluation) {
-          const file = e.target.files[0];
-          const newDoc: InstitutionDocument = { id: generateId(), name: file.name, type: file.type, size: (file.size / 1024).toFixed(1) + ' KB', upload_date: new Date().toLocaleDateString('ar-OM') };
-          const updatedEval = { ...evaluation, attachments: [...(evaluation.attachments || []), newDoc] };
-          setEvaluation(updatedEval);
-          saveEvaluation(updatedEval);
-          showToast('تم إرفاق الدليل بنجاح', 'success');
+      } catch (err: any) {
+          showToast(err.message, 'error');
       }
   };
 
-  const removeAttachment = (docId: string) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (isLocked) return;
+      if (e.target.files && e.target.files[0] && evaluation) {
+          const file = e.target.files[0];
+          try {
+          const newDoc = await uploadFile(file, currentWaqfId);
+          const updatedEval = { ...evaluation, attachments: [...(evaluation.attachments || []), newDoc] };
+          await saveEvaluation(updatedEval);
+          setEvaluation(updatedEval);
+          showToast('تم إرفاق الدليل بنجاح', 'success');
+          } catch (err: any) {
+              showToast(err.message, 'error');
+          }
+      }
+  };
+
+  const removeAttachment = async (docId: string) => {
       if (!evaluation || isLocked) return;
+      try {
+      const doc = evaluation.attachments?.find(d => d.id === docId);
+      if (doc?.file_id) await deleteFile(doc.file_id);
       const updatedEval = { ...evaluation, attachments: evaluation.attachments?.filter(d => d.id !== docId) || [] };
+      await saveEvaluation(updatedEval);
       setEvaluation(updatedEval);
-      saveEvaluation(updatedEval);
       showToast('تم حذف المرفق', 'info');
+      } catch (err: any) {
+          showToast(err.message, 'error');
+      }
   };
 
   const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -423,7 +443,7 @@ const EvaluationPage: React.FC = () => {
                                                         {currentScore && <span className="inline-block mt-2 text-xs font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full animate-fadeIn">تم التقييم: {currentScore} / 5</span>}
                                                         
                                                         {/* Evidence Upload Section */}
-                                                        {(currentScore === 4 || currentScore === 5) && (
+                                                        {(currentScore === 4 || currentScore === 5 || responses[ind.id]?.evidence_doc) && (
                                                             <div className="mt-4 bg-orange-50 border border-orange-200 p-3 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-fadeIn">
                                                                 <div className="flex items-center gap-2 text-orange-800">
                                                                     <Paperclip size={16} />
@@ -432,7 +452,7 @@ const EvaluationPage: React.FC = () => {
                                                                 {responses[ind.id]?.evidence_doc ? (
                                                                     <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-md border border-orange-200">
                                                                         <FileText size={14} className="text-gray-500" />
-                                                                        <span className="text-xs text-gray-700 truncate max-w-[150px]">{responses[ind.id].evidence_doc!.name}</span>
+                                                                        <AttachmentLink doc={responses[ind.id].evidence_doc!} />
                                                                         {!isLocked && (
                                                                             <button onClick={() => removeEvidence(ind.id)} className="text-red-500 hover:text-red-700 mr-2">
                                                                                 <X size={14} />
@@ -442,7 +462,7 @@ const EvaluationPage: React.FC = () => {
                                                                 ) : (
                                                                     <label className={`cursor-pointer bg-white border border-orange-300 text-orange-700 hover:bg-orange-100 px-4 py-1.5 rounded-md text-xs font-bold transition-colors ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                                                         إرفاق ملف
-                                                                        <input type="file" className="hidden" onChange={(e) => handleEvidenceUpload(ind.id, e)} disabled={isLocked} />
+                                                                        <input type="file" accept={ATTACHMENT_ACCEPT} className="hidden" onChange={(e) => handleEvidenceUpload(ind.id, e)} disabled={isLocked} />
                                                                     </label>
                                                                 )}
                                                             </div>
@@ -515,7 +535,7 @@ const EvaluationPage: React.FC = () => {
              <div className="flex items-center gap-3 w-full md:w-auto justify-end">
                  <label className={`cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2.5 rounded-xl flex items-center gap-2 text-sm font-bold transition-all ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}>
                      <Paperclip size={18} /> <span className="hidden sm:inline">أدلة</span>
-                     <input type="file" className="hidden" onChange={handleFileUpload} disabled={isLocked} />
+                     <input type="file" accept={ATTACHMENT_ACCEPT} className="hidden" onChange={handleFileUpload} disabled={isLocked} />
                  </label>
 
                  {!isLocked && (
@@ -538,7 +558,7 @@ const EvaluationPage: React.FC = () => {
                  <span className="text-xs font-bold text-gray-500 flex items-center gap-1 shrink-0"><Paperclip size={12}/> المرفقات:</span>
                  {evaluation.attachments.map(doc => (
                      <div key={doc.id} className="bg-white border border-gray-200 px-2 py-1 rounded text-xs flex items-center gap-2 shrink-0 shadow-sm">
-                         <span className="truncate max-w-[100px]">{doc.name}</span>
+                         <AttachmentLink doc={doc} />
                          <button onClick={() => removeAttachment(doc.id)} disabled={isLocked} className="text-red-400 hover:text-red-600"><X size={12}/></button>
                      </div>
                  ))}

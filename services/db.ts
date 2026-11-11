@@ -1,4 +1,4 @@
-import { Institution, Indicator, Evaluation, Response, ComplianceRecord, ImprovementItem, RiskRegisterItem, FinancialRecord, InstitutionAccount, SystemFeedback } from '../types';
+import { Institution, Indicator, Evaluation, Response, ComplianceRecord, ImprovementItem, RiskRegisterItem, FinancialRecord, InstitutionAccount, SystemFeedback, InstitutionDocument } from '../types';
 import { DEFAULT_INDICATORS, CURRENT_YEAR } from '../constants';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,6 +37,28 @@ let settingsCache: any = null;
 let session: SessionInfo = { authenticated: false };
 
 export const getSession = () => session;
+
+export const uploadFile = (file: File, institutionId?: string | null): Promise<InstitutionDocument> =>
+  new Promise((resolve, reject) => {
+    if (file.size > 10 * 1024 * 1024) return reject(new Error('حجم الملف أكبر من 10 ميغابايت'));
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const data = String(reader.result).split(',')[1] || '';
+        const r = await request('POST', '/files', { name: file.name, data, institution_id: institutionId || undefined });
+        resolve({ id: generateId(), file_id: r.id, name: file.name, type: file.type,
+                  size: (file.size / 1024).toFixed(1) + ' KB', upload_date: new Date().toLocaleDateString('ar-OM') });
+      } catch (e) { reject(e); }
+    };
+    reader.onerror = () => reject(new Error('تعذر قراءة الملف'));
+    reader.readAsDataURL(file);
+  });
+
+export const fileUrl = (fileId: string, download = false) =>
+  `/api/files/${encodeURIComponent(fileId)}${download ? '?download=1' : ''}`;
+
+export const deleteFile = (fileId: string) =>
+  request('DELETE', `/files/${encodeURIComponent(fileId)}`);
 
 export const generateId = () => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID().replace(/-/g, '');

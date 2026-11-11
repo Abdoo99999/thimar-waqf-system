@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useUi } from '../contexts/UiContext';
-import { getInstitutions, saveFinancialRecord, getFinancialRecords, analyzeFinancialHealth, generateId, getInstitutionProgress } from '../services/db';
+import { getInstitutions, saveFinancialRecord, getFinancialRecords, analyzeFinancialHealth, generateId, getInstitutionProgress, uploadFile, deleteFile } from '../services/db';
+import AttachmentLink, { ATTACHMENT_ACCEPT } from '../components/AttachmentLink';
 import { FinancialRecord, InstitutionDocument } from '../types';
 import { CURRENT_YEAR } from '../constants';
 import { 
@@ -127,19 +128,27 @@ const FinancialReports: React.FC = () => {
       setRecord(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       if (isLocked) return;
       if (e.target.files && e.target.files[0]) {
           const file = e.target.files[0];
-          const newDoc: InstitutionDocument = {
-              id: generateId(),
-              name: file.name,
-              type: file.type,
-              size: (file.size / 1024).toFixed(1) + ' KB',
-              upload_date: new Date().toLocaleDateString('ar-OM')
-          };
+          try {
+          const newDoc = await uploadFile(file, currentWaqfId);
           setPdfFile(newDoc);
           showToast('تم إرفاق التقرير المالي', 'success');
+          } catch (err: any) {
+              showToast(err.message, 'error');
+          }
+      }
+  };
+
+  const removeReportFile = async () => {
+      if (isLocked || !pdfFile) return;
+      try {
+          if (pdfFile.file_id) await deleteFile(pdfFile.file_id);
+          setPdfFile(null);
+      } catch (err: any) {
+          showToast(err.message, 'error');
       }
   };
 
@@ -371,11 +380,11 @@ const FinancialReports: React.FC = () => {
                           <div className="flex items-center gap-3">
                               <div className="bg-white p-2 rounded-lg text-red-500 shadow-sm"><FileText size={24}/></div>
                               <div>
-                                  <span className="text-sm font-bold block">{pdfFile.name}</span>
+                                  <AttachmentLink doc={pdfFile} />
                                   <span className="text-xs opacity-70">{pdfFile.size} - تم الرفع</span>
                               </div>
                           </div>
-                          {!isLocked && <button onClick={() => setPdfFile(null)} className="text-red-500 hover:bg-red-100 p-2 rounded-full transition-colors"><XCircle size={20}/></button>}
+                          {!isLocked && <button onClick={removeReportFile} className="text-red-500 hover:bg-red-100 p-2 rounded-full transition-colors"><XCircle size={20}/></button>}
                       </div>
                   ) : (
                       <label className={`flex flex-col items-center justify-center gap-3 w-full h-32 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 text-gray-500 cursor-pointer hover:bg-gray-100 hover:border-blue-400 transition-all group ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}>
@@ -383,7 +392,7 @@ const FinancialReports: React.FC = () => {
                               <UploadCloud size={24} className="text-blue-500" />
                           </div>
                           <span className="text-sm font-medium">اضغط هنا لرفع ملف التقرير</span>
-                          <input type="file" accept="application/pdf" className="hidden" onChange={handleFileUpload} disabled={isLocked} />
+                          <input type="file" accept={ATTACHMENT_ACCEPT} className="hidden" onChange={handleFileUpload} disabled={isLocked} />
                       </label>
                   )}
                   <p className="text-xs text-gray-400 mt-2">يجب أن يكون الملف بصيغة PDF وموقعاً من مكتب التدقيق المعتمد.</p>

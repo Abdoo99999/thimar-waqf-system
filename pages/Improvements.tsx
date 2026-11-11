@@ -3,8 +3,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
     getInstitutions, getEvaluations, getResponses, getIndicators, 
     getImprovements, saveImprovement, deleteImprovement, 
-    getRisks, getComplianceByInstAndYear, generateId 
+    getRisks, getComplianceByInstAndYear, generateId, uploadFile, deleteFile
 } from '../services/db';
+import AttachmentLink, { ATTACHMENT_ACCEPT } from '../components/AttachmentLink';
 import { Institution, ImprovementItem, InstitutionDocument } from '../types';
 import { CURRENT_YEAR } from '../constants';
 import { 
@@ -266,29 +267,30 @@ const Improvements: React.FC = () => {
       }
   };
 
-  const handleDelete = (id: string, status: ColumnType) => {
+  const handleDelete = async (id: string, status: ColumnType) => {
       if(confirm('هل أنت متأكد من حذف هذه المهمة؟')) {
-          deleteImprovement(id);
+          try {
+          const doc = columns[status].find(i => i.id === id)?.evidence_doc;
+          if (doc?.file_id) await deleteFile(doc.file_id);
+          await deleteImprovement(id);
           setColumns(prev => ({
               ...prev,
               [status]: prev[status].filter(i => i.id !== id)
           }));
           showToast('تم حذف المهمة', 'info');
+          } catch (err: any) {
+              showToast(err.message, 'error');
+          }
       }
   };
   
   // Attach Evidence Logic
-  const handleAttachEvidence = (item: ImprovementItem, file: File) => {
-      const newDoc: InstitutionDocument = {
-          id: generateId(),
-          name: file.name,
-          type: file.type,
-          size: (file.size / 1024).toFixed(1) + ' KB',
-          upload_date: new Date().toLocaleDateString('ar-OM')
-      };
+  const handleAttachEvidence = async (item: ImprovementItem, file: File) => {
+      try {
+      const newDoc = await uploadFile(file, currentWaqfId);
       
       const updatedItem = { ...item, evidence_doc: newDoc };
-      saveImprovement(updatedItem);
+      await saveImprovement(updatedItem);
       
       // Update UI
       setColumns(prev => ({
@@ -297,18 +299,26 @@ const Improvements: React.FC = () => {
       }));
       
       showToast('تم إرفاق دليل الإنجاز بنجاح', 'success');
+      } catch (err: any) {
+          showToast(err.message, 'error');
+      }
   };
 
-  const handleRemoveEvidence = (item: ImprovementItem) => {
+  const handleRemoveEvidence = async (item: ImprovementItem) => {
       if(confirm('هل أنت متأكد من حذف دليل الإنجاز؟')) {
+          try {
+          if (item.evidence_doc?.file_id) await deleteFile(item.evidence_doc.file_id);
           const updatedItem = { ...item, evidence_doc: undefined };
-          saveImprovement(updatedItem);
+          await saveImprovement(updatedItem);
           
           setColumns(prev => ({
               ...prev,
               Done: prev.Done.map(i => i.id === item.id ? updatedItem : i)
           }));
           showToast('تم حذف الدليل', 'info');
+          } catch (err: any) {
+              showToast(err.message, 'error');
+          }
       }
   };
   
@@ -546,7 +556,7 @@ const KanbanCard = ({ item, onMoveBack, onMoveForward, onDelete, onAttachEvidenc
                     {item.evidence_doc ? (
                         <div className="flex justify-between items-center bg-green-50 border border-green-100 p-2 rounded-lg text-xs text-green-800">
                             <span className="flex items-center gap-1 truncate font-medium">
-                                <FileText size={12}/> {item.evidence_doc.name}
+                                <FileText size={12}/> <AttachmentLink doc={item.evidence_doc} />
                             </span>
                             <button 
                                 onClick={() => onRemoveEvidence(item)} 
@@ -559,7 +569,7 @@ const KanbanCard = ({ item, onMoveBack, onMoveForward, onDelete, onAttachEvidenc
                     ) : (
                         <label className="cursor-pointer border border-dashed border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-700 p-2 rounded-lg flex items-center justify-center gap-2 text-xs font-bold transition-all hover:scale-105 active:scale-95">
                             <Paperclip size={14} /> إرفاق دليل الإنجاز
-                            <input type="file" className="hidden" onChange={handleFileChange} />
+                            <input type="file" accept={ATTACHMENT_ACCEPT} className="hidden" onChange={handleFileChange} />
                         </label>
                     )}
                 </div>
