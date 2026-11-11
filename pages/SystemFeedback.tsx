@@ -242,7 +242,7 @@ const SystemFeedbackPage: React.FC = () => {
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1">
                         <span className={`text-xs font-bold px-2 py-1 rounded ${acc.must_change ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-700'}`}>
-                          {acc.must_change ? 'مؤقتة' : 'غيّرتها المؤسسة'}
+                          {acc.must_change ? 'مؤقتة (يجب تغييرها)' : 'فعّالة'}
                         </span>
                         <button disabled={busy} onClick={() => handleNewPassword(acc.institution_id)} className="text-xs font-bold text-navy-800 border border-navy-200 bg-white hover:bg-navy-50 px-2 py-1 rounded-lg disabled:opacity-50">
                           كلمة مرور جديدة

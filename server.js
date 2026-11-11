@@ -142,7 +142,7 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 // ─── الدخول والخروج ────────────────────────────────────────────────────────
 app.post('/api/auth/login', wrap(async (req, res) => {
   const code = String(req.body?.code || '').trim().toUpperCase();
-  const password = String(req.body?.password || '');
+  const password = String(req.body?.password || '').trim();
   const key = `${clientIp(req)}|${code}`;
   if (isLocked(key)) return res.status(429).json({ error: `محاولات كثيرة. حاول بعد ${LOCK_MINUTES} دقيقة.` });
 
@@ -464,76 +464,115 @@ async function initDb() {
     }
   }
 
-  // حساب المدير: كلمة المرور من Secret اسمه ADMIN_PASSWORD
+  // حساب المدير
+  // - إن وُضع Secret اسمه ADMIN_PASSWORD تُستخدم قيمته
+  // - وإلا تبقى كلمة المرور الحالية للنسخة السابقة (admin / admin) حتى لا يتغير الدخول
+  //   ويمكن تغييرها لاحقاً من زر "تغيير كلمة المرور"
   const adminUser = (process.env.ADMIN_USERNAME || 'admin').trim().toLowerCase();
   const { rows: admins } = await pool.query('SELECT username, password_hash FROM app_admins WHERE username = $1', [adminUser]);
-  if (process.env.ADMIN_PASSWORD) {
-    if (!admins[0]) {
-      await pool.query('INSERT INTO app_admins (username, password_hash) VALUES ($1, $2)', [adminUser, hashPassword(process.env.ADMIN_PASSWORD)]);
-    } else if (!verifyPassword(process.env.ADMIN_PASSWORD, admins[0].password_hash) && process.env.ADMIN_PASSWORD_FORCE === 'true') {
-      await pool.query('UPDATE app_admins SET password_hash = $1, session_version = session_version + 1 WHERE username = $2', [hashPassword(process.env.ADMIN_PASSWORD), adminUser]);
-    }
-  } else if (!admins[0]) {
-    const pw = randomPassword(14);
-    await pool.query('INSERT INTO app_admins (username, password_hash) VALUES ($1, $2)', [adminUser, hashPassword(pw)]);
-    console.log('════════════════════════════════════════════════════');
-    console.log(`  تم إنشاء حساب المدير: ${adminUser}`);
-    console.log(`  كلمة المرور المؤقتة: ${pw}`);
-    console.log('  (تظهر مرة واحدة فقط — غيّرها بعد الدخول، أو ضع ADMIN_PASSWORD في Secrets)');
-    console.log('════════════════════════════════════════════════════');
+  if (!admins[0]) {
+    const initial = process.env.ADMIN_PASSWORD || 'admin';
+    await pool.query('INSERT INTO app_admins (username, password_hash) VALUES ($1, $2)', [adminUser, hashPassword(initial)]);
+    console.log(`حساب المدير: ${adminUser} (${process.env.ADMIN_PASSWORD ? 'كلمة المرور من ADMIN_PASSWORD' : 'نفس كلمة المرور السابقة'})`);
+  } else if (process.env.ADMIN_PASSWORD && process.env.ADMIN_PASSWORD_FORCE === 'true'
+             && !verifyPassword(process.env.ADMIN_PASSWORD, admins[0].password_hash)) {
+    await pool.query('UPDATE app_admins SET password_hash = $1, session_version = session_version + 1 WHERE username = $2', [hashPassword(process.env.ADMIN_PASSWORD), adminUser]);
+    console.log('تم تعيين كلمة مرور المدير من ADMIN_PASSWORD');
   }
 
   // البيانات الأولية: مرة واحدة فقط
   const { rows: seeded } = await pool.query("SELECT value FROM app_meta WHERE key = 'seeded_v2'");
   if (seeded[0]) return;
 
-  // إن وُجد الجدول القديم: ننقل قائمة المؤسسات ورموز دخولها فقط (بدون البيانات التجريبية)
-  // الجدول القديم waqf_store لا يُحذف ويبقى كنسخة احتياطية
-  let institutions = [];
-  const codes = new Map();
   const legacy = await pool.query("SELECT to_regclass('public.waqf_store') AS t");
-  if (legacy.rows[0].t) {
-    const inst = await pool.query("SELECT data FROM waqf_store WHERE key = 'waqf_institutions'");
-    const acc = await pool.query("SELECT data FROM waqf_store WHERE key = 'waqf_accounts'");
-    if (Array.isArray(inst.rows[0]?.data)) institutions = inst.rows[0].data;
-    if (Array.isArray(acc.rows[0]?.data)) for (const a of acc.rows[0].data) codes.set(a.institution_id, a.login_code);
-    if (institutions.length) console.log(`نقل ${institutions.length} مؤسسة من الجدول القديم (بدون البيانات التجريبية)`);
-  }
-  if (!institutions.length) {
-    const seedFile = path.join(__dirname, 'server', 'seed-institutions.json');
-    institutions = JSON.parse(readFileSync(seedFile, 'utf8')).map(s => ({ ...s, id: newId() }));
-  }
-
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    let n = 0;
-    const used = new Set();
-    for (const i of institutions) {
-      const clean = {
-        id: i.id, name: i.name, type: i.type || 'وقفية عامة',
-        governorate: i.governorate || '', wilayat: i.wilayat || '',
-        profile_completed: false, contact_phone: '', email: '', establishment_date: '', license_number: '',
-        manager_name: '', documents: [], capital_omr: 0, employees_omani: 0, employees_non_omani: 0,
-        employees_seconded: 0, institution_status: i.institution_status, created_at: new Date().toISOString(),
-      };
-      await client.query(
-        "INSERT INTO app_records (collection, id, institution_id, data) VALUES ('waqf_institutions', $1, $1, $2::jsonb) ON CONFLICT DO NOTHING",
-        [clean.id, JSON.stringify(clean)]);
-      n += 1;
-      let code = codes.get(i.id);
-      if (!code || used.has(code)) code = `WQ${String(n).padStart(3, '0')}`;
-      while (used.has(code)) { n += 1; code = `WQ${String(n).padStart(3, '0')}`; }
-      used.add(code);
-      // كلمة مرور عشوائية غير معروفة لأحد — يصدر المدير كلمات المرور من صفحة الحسابات
-      await client.query(
-        'INSERT INTO app_accounts (institution_id, login_code, password_hash, must_change) VALUES ($1, $2, $3, true) ON CONFLICT DO NOTHING',
-        [clean.id, code, hashPassword(randomPassword(24))]);
+    if (legacy.rows[0].t) {
+      await migrateLegacy(client);
+    } else {
+      await seedFresh(client);
     }
     await client.query("INSERT INTO app_meta (key, value) VALUES ('seeded_v2', $1)", [new Date().toISOString()]);
     await client.query('COMMIT');
-    console.log(`✅ تم تجهيز ${institutions.length} مؤسسة. أصدر كلمات المرور من: ملاحظات النظام ← الحسابات`);
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+}
+
+// نقل كل البيانات من الجدول القديم waqf_store كما هي، مع نفس رموز الدخول وكلمات المرور
+// الجدول القديم لا يُحذف ولا يُعدَّل، ويبقى نسخة احتياطية
+async function migrateLegacy(client) {
+  const { rows } = await client.query('SELECT key, data FROM waqf_store');
+  const store = Object.fromEntries(rows.map(r => [r.key, r.data]));
+  const list = (k) => Array.isArray(store[k]) ? store[k] : [];
+
+  const evalOwner = new Map(list('waqf_evaluations').map(e => [e.id, e.institution_id]));
+  const counts = {};
+  const insert = async (collection, item, owner) => {
+    if (!item || typeof item !== 'object') return;
+    if (!item.id) item = { ...item, id: newId() };
+    await client.query(
+      'INSERT INTO app_records (collection, id, institution_id, data) VALUES ($1, $2, $3, $4::jsonb) ON CONFLICT (collection, id) DO NOTHING',
+      [collection, String(item.id), owner, JSON.stringify(item)]);
+    counts[collection] = (counts[collection] || 0) + 1;
+  };
+
+  for (const [collection, def] of Object.entries(COLLECTIONS)) {
+    if (collection === 'waqf_settings') {
+      if (store.waqf_settings && typeof store.waqf_settings === 'object' && !Array.isArray(store.waqf_settings)) {
+        await insert('waqf_settings', { ...store.waqf_settings, id: 'main' }, null);
+      }
+      continue;
+    }
+    for (const item of list(collection)) {
+      let owner = null;
+      if (def.owner === 'self') owner = item.id;
+      else if (def.owner === 'field') owner = item.institution_id || null;
+      else if (def.owner === 'evaluation') owner = evalOwner.get(item.evaluation_id) || null;
+      await insert(collection, item, owner);
+    }
+  }
+
+  // الحسابات: نفس رمز الدخول ونفس كلمة المرور الحالية (تُحفظ مشفّرة)، بدون إلزام بالتغيير
+  const accounts = new Map(list('waqf_accounts').map(a => [a.institution_id, a]));
+  const used = new Set();
+  let n = 0, kept = 0;
+  for (const inst of list('waqf_institutions')) {
+    if (!inst?.id) continue;
+    const a = accounts.get(inst.id);
+    let code = a?.login_code;
+    // مؤسسة بلا حساب: النسخة السابقة كانت تنشئ لها رمزاً بكلمة المرور 1234
+    const password = a?.password != null ? String(a.password).trim() : '1234';
+    if (!code || used.has(code.toUpperCase())) {
+      do { n += 1; code = `WQ${String(n).padStart(3, '0')}`; } while (used.has(code));
+    } else kept++;
+    used.add(code.toUpperCase());
+    await client.query(
+      'INSERT INTO app_accounts (institution_id, login_code, password_hash, must_change) VALUES ($1, $2, $3, false) ON CONFLICT DO NOTHING',
+      [inst.id, code, hashPassword(password)]);
+  }
+  console.log('✅ تم نقل البيانات من الجدول القديم:', JSON.stringify(counts), `| حسابات: ${used.size} (منها ${kept} بنفس الرمز)`);
+}
+
+// تثبيت جديد بدون بيانات سابقة: قائمة المؤسسات فقط
+async function seedFresh(client) {
+  const seedFile = path.join(__dirname, 'server', 'seed-institutions.json');
+  const institutions = JSON.parse(readFileSync(seedFile, 'utf8'));
+  let n = 0;
+  for (const s of institutions) {
+    n += 1;
+    const id = newId();
+    const clean = {
+      id, name: s.name, type: s.type || 'وقفية عامة', governorate: s.governorate || '', wilayat: s.wilayat || '',
+      profile_completed: false, contact_phone: '', email: '', establishment_date: '', license_number: '',
+      manager_name: '', documents: [], capital_omr: 0, employees_omani: 0, employees_non_omani: 0,
+      employees_seconded: 0, created_at: new Date().toISOString(),
+    };
+    await client.query("INSERT INTO app_records (collection, id, institution_id, data) VALUES ('waqf_institutions', $1, $1, $2::jsonb)", [id, JSON.stringify(clean)]);
+    // كلمة مرور عشوائية — يصدرها المدير من صفحة الحسابات
+    await client.query('INSERT INTO app_accounts (institution_id, login_code, password_hash, must_change) VALUES ($1, $2, $3, true)',
+      [id, `WQ${String(n).padStart(3, '0')}`, hashPassword(randomPassword(24))]);
+  }
+  console.log(`✅ تم تجهيز ${institutions.length} مؤسسة. أصدر كلمات المرور من: ملاحظات النظام ← الحسابات`);
 }
 
 async function main() {

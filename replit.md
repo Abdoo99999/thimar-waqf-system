@@ -50,8 +50,9 @@ A management and evaluation platform for Omani Waqf (charitable endowment) insti
 - Institution users receive and can modify ONLY their own institution's records; the server enforces this in `checkUserWrite`.
 - Every save sends a single record (`PUT /api/records/:collection/:id`). Never reintroduce whole-collection writes: they caused lost data when two institutions saved at once.
 - Institutions cannot approve/return evaluations or edit answers after submitting.
-- Admin password: set the Secret `ADMIN_PASSWORD` (username `admin`, or `ADMIN_USERNAME`). If not set, a temporary password is printed once in the server console on first start. To force-reset to the Secret value, also set `ADMIN_PASSWORD_FORCE=true` for one restart.
-- Institution passwords are issued by the admin from "ملاحظات النظام ← الحسابات"; they are shown once and must be changed at first login.
+- Migration (first start only): all data in the legacy `waqf_store` table is copied into `app_records`, and every institution keeps its existing login code and password (stored hashed, no forced change). The admin keeps the previous password unless the Secret `ADMIN_PASSWORD` is set before the first start. `waqf_store` is never modified.
+- Admin username `admin` (or `ADMIN_USERNAME`). To reset the admin password later: set `ADMIN_PASSWORD` plus `ADMIN_PASSWORD_FORCE=true`, restart once, then remove `ADMIN_PASSWORD_FORCE`. Or use the in-app "تغيير كلمة المرور" button.
+- New institutions added by the admin get a random password shown once; existing ones can be reissued from "ملاحظات النظام ← حسابات المؤسسات".
 - Optional Secret `SESSION_SECRET`; otherwise one is generated and stored in `app_meta`.
 
 ## Development
