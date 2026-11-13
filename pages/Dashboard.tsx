@@ -8,6 +8,13 @@ import { Building, AlertTriangle, TrendingUp, TrendingDown, MapPin, Shield, Wall
 import { useUi } from '../contexts/UiContext';
 import { GOVERNORATES } from '../constants';
 
+const formatOMR = (v: number) => {
+  const a = Math.abs(v), s = v < 0 ? '-' : '';
+  if (a >= 1_000_000) return s + (a / 1_000_000).toFixed(1) + 'M';
+  if (a >= 1_000) return s + (a / 1_000).toFixed(1) + 'K';
+  return s + a.toFixed(0);
+};
+
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#f97316', '#ef4444'];
 const GOV_COLORS = ['#3366cc', '#dc3912', '#ff9900', '#109618', '#990099', '#0099c6', '#dd4477', '#66aa00', '#b82e2e', '#316395', '#994499'];
 const RANK_COLORS = ['#fbbf24', '#94a3b8', '#b45309', '#475569', '#475569']; 
@@ -426,8 +433,8 @@ const Dashboard: React.FC = () => {
                         </ResponsiveContainer>
                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                              <Briefcase className="text-blue-500 mb-1" size={24} />
-                             <span className="text-xl font-black text-navy-900">{(financialStats.netAssets / 1000000).toFixed(2)}M</span>
-                             <span className="text-[10px] text-gray-500">مليون ر.ع</span>
+                             <span className="text-xl font-black text-navy-900">{formatOMR(financialStats.netAssets)}</span>
+                             <span className="text-[10px] text-gray-500">ر.ع</span>
                         </div>
                         </ChartState>
                     </div>
@@ -453,8 +460,8 @@ const Dashboard: React.FC = () => {
                         </ResponsiveContainer>
                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                              {financialStats.surplus >= 0 ? <TrendingUp size={24} className="text-emerald-500 mb-1"/> : <TrendingDown size={24} className="text-red-500 mb-1"/>}
-                             <span className="text-xl font-black text-navy-900">{(financialStats.surplus / 1000).toFixed(1)}K</span>
-                             <span className="text-[10px] text-gray-500">ألف ر.ع</span>
+                             <span className="text-xl font-black text-navy-900">{formatOMR(financialStats.surplus)}</span>
+                             <span className="text-[10px] text-gray-500">ر.ع</span>
                         </div>
                         </ChartState>
                     </div>
@@ -561,7 +568,7 @@ const Dashboard: React.FC = () => {
                                 fill="#374151" 
                                 fontSize={14} 
                                 fontWeight="bold" 
-                                formatter={(val: number) => (val / 1000).toFixed(1) + 'k'}
+                                formatter={(val: number) => formatOMR(val)}
                              />
                          </Bar>
                      </BarChart>

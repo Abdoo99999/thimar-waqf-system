@@ -298,6 +298,11 @@ const FinancialReports: React.FC = () => {
                       <label className="block text-xs font-bold text-navy-900 mb-1">الفائض / العجز</label>
                       <input disabled type="text" className={`w-full p-2 border rounded-lg font-bold bg-gray-100 ${(record.surplus_deficit || 0) < 0 ? 'text-red-600' : 'text-green-600'}`} 
                           value={record.surplus_deficit?.toLocaleString() || '0'} />
+                      {Math.abs((record.surplus_deficit || 0) - ((record.total_revenues || 0) - (record.total_expenses || 0))) > 1 && (
+                          <p role="status" className="mt-2 rounded-lg border border-orange-200 bg-orange-50 p-2 text-sm font-bold text-orange-700">
+                              الفائض/العجز لا يساوي الإيرادات ناقص المصروفات — يرجى المراجعة
+                          </p>
+                      )}
                   </div>
               </div>
           </div>
