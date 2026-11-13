@@ -311,7 +311,7 @@ export const getInstitutionProgress = (id: string | null) => {
       dataComplete: !!(i?.profile_completed),
       financialsDone: isFinancialsSubmitted,
       evalFinalized: !!(e?.status === 'final'),
-      complianceDone: !!c && getRisks(id).length > 0,
+      complianceDone: !!c && c.completed !== false && getRisks(id).length > 0,
       workflowStatus: e?.workflow_status || 'draft',
       isLocked: e?.workflow_status === 'submitted' || e?.workflow_status === 'approved'
   };

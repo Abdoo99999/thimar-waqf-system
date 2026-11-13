@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { summarizeCompliance, getAutoChecks } from '../utils/compliance';
 import { 
     getInstitutions, getEvaluations, getResponses, getIndicators, 
     getImprovements, saveImprovement, deleteImprovement, 
@@ -128,29 +129,8 @@ const Improvements: React.FC = () => {
     // 3. Source: Compliance Gaps
     const comp = getComplianceByInstAndYear(currentWaqfId, CURRENT_YEAR);
     if (comp) {
-        const gaps: {key: string, label: string}[] = [];
-        if (comp.institution_status !== 'فاعلة') gaps.push({key: 'status', label: 'حالة المؤسسة غير فاعلة'});
-        if (comp.board_status !== 'قائم') gaps.push({key: 'board', label: 'مجلس الإدارة غير قائم'});
-        
-        // Check Core Requirements (skip hidden ones)
-        if (!comp.has_executive_management && !comp.hidden_core_requirements?.includes('has_executive_management')) 
-            gaps.push({key: 'exec', label: 'غياب الإدارة التنفيذية'});
-        
-        if (!comp.has_auditor_company && !comp.hidden_core_requirements?.includes('has_auditor_company')) 
-            gaps.push({key: 'audit', label: 'لم يتم تعيين مدقق خارجي'});
-        
-        if (!comp.has_minutes_prev_year && !comp.hidden_core_requirements?.includes('has_minutes_prev_year')) 
-            gaps.push({key: 'minutes', label: 'نقص محاضر الاجتماعات'});
-        
-        if (!comp.has_financial_report_prev_year && !comp.hidden_core_requirements?.includes('has_financial_report_prev_year')) 
-            gaps.push({key: 'finance', label: 'غياب التقرير المالي'});
-
-        // Check Custom Requirements
-        comp.custom_requirements?.forEach(req => {
-            if (!req.met) {
-                gaps.push({key: `custom_${req.id}`, label: `متطلب إضافي: ${req.text}`});
-            }
-        });
+        // فجوات الامتثال من المنطق الموحّد (نفس مفاتيح COMP- السابقة حتى لا تتكرر البنود)
+        const gaps = summarizeCompliance(comp, getAutoChecks(currentWaqfId)).gaps;
 
         gaps.forEach(gap => {
             const compositeId = `COMP-${gap.key}`;
@@ -161,7 +141,7 @@ const Improvements: React.FC = () => {
                     indicator_id: compositeId,
                     priority: 'High',
                     issue_summary: `قصور امتثال: ${gap.label}`,
-                    recommended_action: 'استيفاء المتطلب النظامي فوراً.',
+                    recommended_action: (gap.note || '').trim() || 'استيفاء المتطلب النظامي فوراً.',
                     owner: 'أمين السر / المدير',
                     due_date: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
                     status: 'ToDo',

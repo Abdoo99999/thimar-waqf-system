@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { summarizeCompliance, getAutoChecks } from '../utils/compliance';
 import { 
     getInstitutions, 
     getEvaluations, 
@@ -149,21 +150,11 @@ const Reports: React.FC = () => {
 
     // 4. Compliance Data Integration
     const compliance = getComplianceByInstAndYear(currentWaqfId, CURRENT_YEAR);
-    let complianceScore = 0;
-    let missingItems: string[] = [];
-    
-    if (compliance) {
-        if (compliance.institution_status === 'فاعلة') complianceScore++; else missingItems.push('حالة المؤسسة غير فاعلة');
-        if (compliance.board_status === 'قائم') complianceScore++; else missingItems.push('مجلس الإدارة غير قائم');
-        if (compliance.has_executive_management) complianceScore++; else missingItems.push('لا توجد إدارة تنفيذية');
-        if (compliance.has_auditor_company) complianceScore++; else missingItems.push('لم يتم تعيين مدقق خارجي');
-        if (compliance.has_minutes_prev_year) complianceScore++; else missingItems.push('نقص محاضر الاجتماعات');
-        if (compliance.has_financial_report_prev_year) complianceScore++; else missingItems.push('غياب التقرير المالي');
-    } else {
-        missingItems.push('لم يتم إنشاء سجل الامتثال لهذا العام');
-    }
+    // نفس حساب صفحة الامتثال: الحالة + الفحوص التلقائية + الالتزامات + المتطلبات الإضافية
+    const complianceSummary = summarizeCompliance(compliance, getAutoChecks(currentWaqfId));
+    const missingItems: string[] = complianceSummary.missing;
 
-    const compliancePercentage = Math.round((complianceScore / 6) * 100);
+    const compliancePercentage = complianceSummary.pct;
     const complianceChartData = [
         { name: 'ممتثل', value: compliancePercentage, fill: '#3b82f6' }, 
         { name: 'غير ممتثل', value: 100 - compliancePercentage, fill: '#e5e7eb' } 

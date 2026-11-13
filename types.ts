@@ -105,11 +105,15 @@ export interface Response {
   updated_at: string;
 }
 
+export type ObligationAnswer = 'yes' | 'no' | 'na';
+
 export interface CustomRequirement {
     id: string;
     text: string;
     met: boolean;
     evidence_doc?: InstitutionDocument;
+    answer?: ObligationAnswer; // الصيغة الجديدة: ملتزم / غير ملتزم / لا ينطبق
+    note?: string;             // سبب عدم الالتزام وخطة التصحيح
 }
 
 export interface ComplianceRecord {
@@ -133,6 +137,12 @@ export interface ComplianceRecord {
 
   custom_requirements?: CustomRequirement[]; // Dynamic requirements
 
+  // الصيغة الجديدة لصفحة الامتثال (الحقول القديمة أعلاه تبقى وتُملأ تلقائياً للتوافق)
+  obligations?: Record<string, ObligationAnswer>;
+  obligation_evidence?: Record<string, InstitutionDocument>;
+  obligation_notes?: Record<string, string>;
+  completed?: boolean; // false = مسودة. السجلات القديمة بدون الحقل تُعد مكتملة
+
   followup_actions?: string;
   notes?: string;
   last_updated_at: string;
@@ -142,11 +152,14 @@ export interface RiskRegisterItem {
   id: string;
   institution_id: string;
   risk_title: string;
-  category: 'Strategic' | 'Financial' | 'Operational' | 'Legal';
+  category: 'Strategic' | 'Financial' | 'Operational' | 'Legal' | 'Shariah';
   probability: number; // 1-5
   impact: number; // 1-5
   mitigation_plan: string;
   status: 'Open' | 'Mitigated' | 'Closed';
+  owner?: string;
+  due_date?: string;
+  library_id?: string; // إذا أُضيف من مكتبة مخاطر الأوقاف
 }
 
 export interface ImprovementItem {
