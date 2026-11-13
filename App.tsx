@@ -19,6 +19,9 @@ const ApprovalRequests = lazy(() => import('./pages/ApprovalRequests'));
 const FinancialReports = lazy(() => import('./pages/FinancialReports'));
 const Feedback = lazy(() => import('./pages/Feedback'));
 const SystemFeedbackPage = lazy(() => import('./pages/SystemFeedback'));
+const InstitutionHome = lazy(() => import('./pages/InstitutionHome'));
+const Tracking = lazy(() => import('./pages/Tracking'));
+const Accounts = lazy(() => import('./pages/Accounts'));
 
 const PageLoader = () => (
   <div className="flex flex-col items-center justify-center h-[80vh] text-navy-800">
@@ -96,6 +99,9 @@ const AppRoutes: React.FC = () => {
     <Suspense fallback={<PageLoader />}>
       <Routes>
         <Route path="/dashboard" element={<ProtectedRoute requiredRole="admin"><Dashboard /></ProtectedRoute>} />
+        <Route path="/home" element={<ProtectedRoute requiredRole="user"><InstitutionHome /></ProtectedRoute>} />
+        <Route path="/tracking" element={<ProtectedRoute requiredRole="admin"><Tracking /></ProtectedRoute>} />
+        <Route path="/accounts" element={<ProtectedRoute requiredRole="admin"><Accounts /></ProtectedRoute>} />
         <Route path="/reports" element={<ProtectedRoute requiredRole="admin"><Reports /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute requiredRole="admin"><Settings /></ProtectedRoute>} />
         <Route path="/approval-requests" element={<ProtectedRoute requiredRole="admin"><ApprovalRequests /></ProtectedRoute>} />

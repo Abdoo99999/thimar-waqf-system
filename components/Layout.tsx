@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Building2, ClipboardCheck, Scale, FileBarChart, Menu, X, ShieldAlert, Settings, LogOut, Lock, Send, Inbox, CheckCircle, RotateCcw, Landmark, RefreshCw, AlertTriangle, MessageSquarePlus, MessageSquare, KeyRound, Shield } from 'lucide-react';
-import { getSession, getSettings, getInstitutionProgress, getPendingEvaluationsCount, getEvaluationByInstAndYear, saveEvaluation, getUnreadFeedbackCount } from '../services/db';
+import { LayoutDashboard, Building2, ClipboardCheck, Scale, FileBarChart, Menu, X, ShieldAlert, Settings, LogOut, Lock, Send, Inbox, CheckCircle, RotateCcw, Landmark, RefreshCw, AlertTriangle, MessageSquarePlus, MessageSquare, KeyRound, Shield, Home, ListChecks } from 'lucide-react';
+import { getSession, getSettings, getInstitutionProgress, getPendingEvaluationsCount, getEvaluationByInstAndYear, saveEvaluation, getUnreadFeedbackCount, getInstitutions } from '../services/db';
 import { CURRENT_YEAR } from '../constants';
 import { useUi } from '../contexts/UiContext';
 import { ChangePasswordModal, CredentialsModal } from './AccountModals';
@@ -228,10 +228,13 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   // Define All Routes with Roles
   const allNavItems = [
+    { to: '/home', icon: Home, label: 'الرئيسية', roles: ['user'] },
     { to: '/dashboard', icon: LayoutDashboard, label: 'الرئيسية (القيادة)', roles: ['admin'] },
+    { to: '/tracking', icon: ListChecks, label: 'متابعة المؤسسات', roles: ['admin'] },
     { to: '/approval-requests', icon: Inbox, label: 'طلبات الاعتماد', roles: ['admin'], badge: pendingCount },
     { to: '/system-feedback', icon: MessageSquare, label: 'ملاحظات النظام', roles: ['admin'], badge: unreadFeedback },
-    { to: '/institutions', icon: Building2, label: 'بيانات المؤسسة', roles: ['admin', 'user'] },
+    { to: '/accounts', icon: KeyRound, label: 'حسابات المؤسسات', roles: ['admin'] },
+    { to: '/institutions', icon: Building2, label: role === 'admin' ? 'بيانات المؤسسات' : 'بيانات المؤسسة', roles: ['admin', 'user'] },
     { to: '/financial-reports', icon: Landmark, label: 'القوائم المالية', roles: ['admin', 'user'] },
     { to: '/evaluation', icon: ClipboardCheck, label: 'الأداء المؤسسي', roles: ['admin', 'user'] },
     { to: '/compliance', icon: Scale, label: 'الامتثال والمخاطر', roles: ['admin', 'user'] },
@@ -244,6 +247,11 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   // Filter based on current role
   const navItems = allNavItems.filter(item => role && item.roles.includes(role));
+  const selectedInstitution = role === 'admin' && currentWaqfId ? getInstitutions().find(i => i.id === currentWaqfId) : null;
+  const renderNavItem = (item: typeof allNavItems[number]) => (
+    <SidebarItem key={item.to} {...item} active={location.pathname === item.to}
+      locked={item.to === '/home' ? false : isRouteLocked(item.to, role, progress)} />
+  );
 
   return (
     <div className="flex h-[100dvh] bg-gray-50 dark:bg-gray-900 overflow-hidden font-sans text-right" dir="rtl">
@@ -278,17 +286,24 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </div>
         
         <nav className="p-4 pb-6 space-y-2 flex-1 min-h-0 overflow-y-auto overscroll-contain mt-2 scrollbar-thin scrollbar-thumb-navy-700">
-          {navItems.map((item) => {
-              const locked = isRouteLocked(item.to, role, progress);
-              return (
-                  <SidebarItem 
-                    key={item.to} 
-                    {...item} 
-                    active={location.pathname === item.to} 
-                    locked={locked}
-                  />
-              );
-          })}
+          {role === 'admin' ? (
+            <>
+              <p className="px-4 pt-2 text-xs font-bold text-gray-400">الإدارة</p>
+              {['/dashboard', '/tracking', '/approval-requests', '/institutions'].map(path => renderNavItem(navItems.find(item => item.to === path)!))}
+              {currentWaqfId ? (
+                <>
+                  <p className="px-4 pt-5 text-xs font-bold text-gray-400">المؤسسة المختارة</p>
+                  <div className="mx-2 flex items-start justify-between gap-2 rounded-lg border border-navy-700 bg-navy-800 p-3">
+                    <span className="min-w-0 break-words text-xs font-bold text-white">{selectedInstitution?.name || 'المؤسسة المختارة'}</span>
+                    <Link to="/tracking" className="shrink-0 text-xs font-bold text-teal-400 hover:underline">تغيير</Link>
+                  </div>
+                  {['/financial-reports', '/evaluation', '/compliance', '/improvements', '/reports'].map(path => renderNavItem(navItems.find(item => item.to === path)!))}
+                </>
+              ) : <p className="px-4 py-5 text-xs leading-relaxed text-gray-400">اختر مؤسسة من متابعة المؤسسات</p>}
+              <p className="px-4 pt-5 text-xs font-bold text-gray-400">النظام</p>
+              {['/system-feedback', '/accounts', '/settings'].map(path => renderNavItem(navItems.find(item => item.to === path)!))}
+            </>
+          ) : navItems.map(renderNavItem)}
           <button
             onClick={() => setPwModal('optional')}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-300 text-gray-300 hover:bg-navy-800 hover:text-white mt-4"

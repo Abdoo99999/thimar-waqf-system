@@ -247,7 +247,7 @@ const Institutions: React.FC = () => {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-navy-900 dark:text-white">بيانات المؤسسات</h2>
+        <h2 className="text-2xl font-bold text-navy-900 dark:text-white">{role === 'user' ? 'بيانات المؤسسة' : 'بيانات المؤسسات'}</h2>
         {role === 'admin' && (
             <button 
             onClick={() => { setFormData({}); setShowForm(true); }}
@@ -294,7 +294,7 @@ const Institutions: React.FC = () => {
           </div>
       )}
 
-      <div className="relative">
+      {role !== 'user' && <div className="relative">
         <input
           type="text"
           placeholder="بحث عن مؤسسة..."
@@ -303,7 +303,7 @@ const Institutions: React.FC = () => {
           onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
         />
         <Search className="absolute top-3.5 right-3 text-gray-400" size={18} />
-      </div>
+      </div>}
 
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
         <div className="overflow-x-auto">

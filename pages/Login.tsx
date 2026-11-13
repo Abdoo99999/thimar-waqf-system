@@ -27,7 +27,7 @@ const Login: React.FC = () => {
         setWaqfContext(session.institution_id || '');
         login(session.name || '', 'user');
         showToast(`مرحباً، ${session.name}`, 'success');
-        navigate('/institutions', { replace: true });
+        navigate('/home', { replace: true });
       }
     } catch (err: any) {
       showToast(err?.message || 'رمز الدخول أو كلمة المرور غير صحيحة', 'error');
