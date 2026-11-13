@@ -253,7 +253,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           <div className="flex items-center gap-3">
              <div className="w-10 h-10 min-w-[2.5rem] bg-white rounded-full p-1 overflow-hidden flex items-center justify-center shadow-md transition-transform hover:scale-110 duration-300">
                  <img 
-                    src="https://upload.wikimedia.org/wikipedia/commons/5/52/Ministry_of_Endowments_and_Religious_Affairs_%28Oman%29_Logo.png" 
+                    src="/logo-emblem.png" 
                     className="w-full h-full object-contain" 
                     onError={(e) => {
                         e.currentTarget.style.display = 'none';

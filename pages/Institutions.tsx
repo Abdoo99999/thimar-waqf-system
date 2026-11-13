@@ -573,7 +573,7 @@ const Institutions: React.FC = () => {
                             <label className="block text-sm font-bold text-gray-700 mb-2">رقم الهاتف *</label>
                             <div className="relative">
                                 <Phone className="absolute top-3 right-3 text-gray-400 group-focus-within:text-blue-600 transition-colors" size={18} />
-                                <input required={role !== 'admin'} type="tel" disabled={isFormLocked} placeholder="مثال: 9xxxxxxx" className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.contact_phone || ''} onChange={e => setFormData({...formData, contact_phone: e.target.value})} />
+                                <input required={role !== 'admin'} type="tel" disabled={isFormLocked} placeholder="9xxxxxxx" className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.contact_phone || ''} onChange={e => setFormData({...formData, contact_phone: e.target.value})} />
                             </div>
                         </div>
 

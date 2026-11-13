@@ -45,9 +45,9 @@ const Login: React.FC = () => {
 
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden relative z-10">
         <div className="bg-navy-900 p-8 text-center border-b-4 border-gold-500">
-          <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-xl p-2 border-2 border-gray-100">
+          <div className="w-56 h-32 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-sm p-3">
             <img
-              src="https://upload.wikimedia.org/wikipedia/commons/5/52/Ministry_of_Endowments_and_Religious_Affairs_%28Oman%29_Logo.png"
+              src="/logo.png"
               alt="Logo"
               className="w-full h-full object-contain"
               onError={(e) => { e.currentTarget.style.display = 'none'; }}
