@@ -31,7 +31,7 @@ export const getInstitutionJourney = (institutionId: string): InstitutionJourney
   const progress = getInstitutionProgress(institutionId);
   const evaluation = getEvaluationByInstAndYear(institutionId, CURRENT_YEAR);
   const workflowStatus = (evaluation?.workflow_status || 'draft') as WorkflowStatus;
-  const improvementsDone = !!evaluation && getImprovements(evaluation.id).length > 0;
+  const improvementsDone = (!!evaluation && getImprovements(evaluation.id).length > 0) || workflowStatus === 'submitted' || workflowStatus === 'approved';
   const completed = [
     progress.dataComplete,
     progress.financialsDone,
