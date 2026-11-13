@@ -480,7 +480,7 @@ const Institutions: React.FC = () => {
                                     className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" 
                                     value={formData.name || ''} 
                                     onChange={e => setFormData({...formData, name: e.target.value})} 
-                                    placeholder="ادخل الاسم الرسمي للمؤسسة"
+                                    placeholder="مثال: مؤسسة مسقط الوقفية"
                                 />
                             </div>
                         </div>
@@ -507,7 +507,7 @@ const Institutions: React.FC = () => {
                             <label className="block text-sm font-bold text-gray-700 mb-2">رقم القرار *</label>
                             <div className="relative">
                                 <Hash className="absolute top-3 right-3 text-gray-400 group-focus-within:text-teal-600 transition-colors" size={18} />
-                                <input required={role !== 'admin'} type="text" disabled={isFormLocked} placeholder="مثال: 10223" className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.license_number || ''} onChange={e => setFormData({...formData, license_number: e.target.value})} />
+                                <input required={role !== 'admin'} type="text" disabled={isFormLocked} placeholder="مثال: 1234/2018" className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.license_number || ''} onChange={e => setFormData({...formData, license_number: e.target.value})} />
                             </div>
                         </div>
 
@@ -564,7 +564,7 @@ const Institutions: React.FC = () => {
                             <label className="block text-sm font-bold text-gray-700 mb-2">مدير المؤسسة *</label>
                             <div className="relative">
                                 <User className="absolute top-3 right-3 text-gray-400 group-focus-within:text-blue-600 transition-colors" size={18} />
-                                <input required={role !== 'admin'} type="text" disabled={isFormLocked} className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.manager_name || ''} onChange={e => setFormData({...formData, manager_name: e.target.value})} />
+                                <input required={role !== 'admin'} type="text" disabled={isFormLocked} placeholder="مثال: أحمد بن سالم الهنائي" className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.manager_name || ''} onChange={e => setFormData({...formData, manager_name: e.target.value})} />
                             </div>
                         </div>
                         
@@ -573,7 +573,7 @@ const Institutions: React.FC = () => {
                             <label className="block text-sm font-bold text-gray-700 mb-2">رقم الهاتف *</label>
                             <div className="relative">
                                 <Phone className="absolute top-3 right-3 text-gray-400 group-focus-within:text-blue-600 transition-colors" size={18} />
-                                <input required={role !== 'admin'} type="tel" disabled={isFormLocked} placeholder="968xxxxxxxx" className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.contact_phone || ''} onChange={e => setFormData({...formData, contact_phone: e.target.value})} />
+                                <input required={role !== 'admin'} type="tel" disabled={isFormLocked} placeholder="مثال: 9xxxxxxx" className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.contact_phone || ''} onChange={e => setFormData({...formData, contact_phone: e.target.value})} />
                             </div>
                         </div>
 
@@ -582,7 +582,7 @@ const Institutions: React.FC = () => {
                             <label className="block text-sm font-bold text-gray-700 mb-2">البريد الإلكتروني *</label>
                             <div className="relative">
                                 <Mail className="absolute top-3 right-3 text-gray-400 group-focus-within:text-blue-600 transition-colors" size={18} />
-                                <input required={role !== 'admin'} type="email" disabled={isFormLocked} className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} />
+                                <input required={role !== 'admin'} type="email" disabled={isFormLocked} placeholder="مثال: info@waqf.om" className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} />
                             </div>
                         </div>
 
@@ -632,28 +632,28 @@ const Institutions: React.FC = () => {
                             <label className="block text-sm font-bold text-gray-700 mb-2">رأس المال (ر.ع) *</label>
                             <div className="relative">
                                 <DollarSign className="absolute top-3 right-3 text-gray-400 group-focus-within:text-purple-600 transition-colors" size={18} />
-                                <input type="number" required={role !== 'admin'} disabled={isFormLocked} className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.capital_omr || ''} onChange={e => setFormData({...formData, capital_omr: Number(e.target.value)})} />
+                                <input type="number" required={role !== 'admin'} disabled={isFormLocked} placeholder="مثال: 250000" className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.capital_omr || ''} onChange={e => setFormData({...formData, capital_omr: Number(e.target.value)})} />
                             </div>
                         </div>
                         <div className="group">
                             <label className="block text-sm font-bold text-gray-700 mb-2">الموظفين العمانيين</label>
                              <div className="relative">
                                 <Users className="absolute top-3 right-3 text-gray-400 group-focus-within:text-purple-600 transition-colors" size={18} />
-                                <input type="number" disabled={isFormLocked} className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.employees_omani || ''} onChange={e => setFormData({...formData, employees_omani: Number(e.target.value)})} />
+                                 <input type="number" disabled={isFormLocked} placeholder="مثال: 12" className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.employees_omani || ''} onChange={e => setFormData({...formData, employees_omani: Number(e.target.value)})} />
                             </div>
                         </div>
                         <div className="group">
                             <label className="block text-sm font-bold text-gray-700 mb-2">الموظفين غير العمانيين</label>
                             <div className="relative">
                                 <Users className="absolute top-3 right-3 text-gray-400 group-focus-within:text-purple-600 transition-colors" size={18} />
-                                <input type="number" disabled={isFormLocked} className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.employees_non_omani || ''} onChange={e => setFormData({...formData, employees_non_omani: Number(e.target.value)})} />
+                                 <input type="number" disabled={isFormLocked} placeholder="مثال: 3" className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.employees_non_omani || ''} onChange={e => setFormData({...formData, employees_non_omani: Number(e.target.value)})} />
                             </div>
                         </div>
                         <div className="group">
                             <label className="block text-sm font-bold text-gray-700 mb-2">الموظفين المفرغين</label>
                             <div className="relative">
                                 <Users className="absolute top-3 right-3 text-gray-400 group-focus-within:text-purple-600 transition-colors" size={18} />
-                                <input type="number" disabled={isFormLocked} className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.employees_seconded || ''} onChange={e => setFormData({...formData, employees_seconded: Number(e.target.value)})} />
+                                 <input type="number" disabled={isFormLocked} placeholder="مثال: 2" className="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all disabled:bg-gray-100 disabled:text-gray-500" value={formData.employees_seconded || ''} onChange={e => setFormData({...formData, employees_seconded: Number(e.target.value)})} />
                             </div>
                         </div>
                     </div>

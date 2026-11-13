@@ -1,17 +1,15 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { getInstitutions, getEvaluations, getResponses, clearCache, resetInstitution } from '../services/db';
+import { getInstitutions, getEvaluations, getResponses, clearCache } from '../services/db';
 import { Institution, Evaluation } from '../types';
 import { CURRENT_YEAR } from '../constants';
-import { Eye, Clock, RefreshCw, RotateCcw, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Eye, Clock, RefreshCw } from 'lucide-react';
 import { useUi } from '../contexts/UiContext';
 import { useNavigate } from 'react-router-dom';
 
 const ApprovalRequests: React.FC = () => {
   const [requests, setRequests] = useState<{inst: Institution, eval: Evaluation, score: string}[]>([]);
   const [loading, setLoading] = useState(false);
-  const [confirmResetId, setConfirmResetId] = useState<string | null>(null);
-  const [resetDone, setResetDone] = useState<string | null>(null);
   const { setWaqfContext, showToast } = useUi();
   const navigate = useNavigate();
 
@@ -45,19 +43,6 @@ const ApprovalRequests: React.FC = () => {
     navigate('/reports');
   };
 
-  const handleReset = async (instId: string) => {
-    try { await resetInstitution(instId); } catch (e: any) { showToast(e?.message || 'تعذرت الإعادة', 'error'); return; }
-    setConfirmResetId(null);
-    setResetDone(instId);
-    setTimeout(() => {
-      setResetDone(null);
-      loadRequests();
-    }, 2000);
-  };
-
-  const getInstName = (instId: string) =>
-    requests.find(r => r.inst.id === instId)?.inst.name ?? 'المؤسسة';
-
   return (
     <div className="space-y-6 pb-20">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
@@ -83,20 +68,19 @@ const ApprovalRequests: React.FC = () => {
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
-        <table className="w-full text-right min-w-[560px]">
+        <table className="w-full text-right min-w-[480px]">
           <thead className="bg-gray-50 text-gray-600 font-medium border-b border-gray-100">
             <tr>
               <th className="p-4">المؤسسة</th>
               <th className="p-4">تاريخ الإرسال</th>
               <th className="p-4">النتيجة الأولية</th>
               <th className="p-4">المراجعة</th>
-              <th className="p-4 text-center">إعادة التعيين</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {requests.length > 0 ? (
               requests.map((req) => (
-                <tr key={req.eval.id} className={`hover:bg-blue-50 transition-colors ${resetDone === req.inst.id ? 'bg-green-50' : ''}`}>
+                <tr key={req.eval.id} className="hover:bg-blue-50 transition-colors">
                   <td className="p-4 font-bold text-navy-900">{req.inst.name}</td>
                   <td className="p-4 text-gray-500 text-sm">
                     <div className="flex items-center gap-2">
@@ -117,26 +101,11 @@ const ApprovalRequests: React.FC = () => {
                       <Eye size={16} /> معاينة ومراجعة
                     </button>
                   </td>
-                  <td className="p-4 text-center">
-                    {resetDone === req.inst.id ? (
-                      <span className="flex items-center justify-center gap-1 text-green-600 text-xs font-bold">
-                        <CheckCircle size={14} /> تم الإعادة
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => setConfirmResetId(req.inst.id)}
-                        title="إعادة تعيين بيانات المؤسسة للبداية"
-                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 transition-colors"
-                      >
-                        <RotateCcw size={13} /> إعادة تعيين
-                      </button>
-                    )}
-                  </td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan={5} className="p-10 text-center text-gray-400">
+                <td colSpan={4} className="p-10 text-center text-gray-400">
                   {loading ? 'جاري التحميل...' : 'لا توجد طلبات اعتماد معلقة حالياً'}
                 </td>
               </tr>
@@ -146,46 +115,6 @@ const ApprovalRequests: React.FC = () => {
         </div>
       </div>
 
-      {/* نافذة تأكيد إعادة التعيين */}
-      {confirmResetId && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setConfirmResetId(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" dir="rtl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center shrink-0">
-                <AlertTriangle size={24} className="text-orange-500" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-gray-900">تأكيد إعادة التعيين</h3>
-                <p className="text-sm text-gray-500">{getInstName(confirmResetId)}</p>
-              </div>
-            </div>
-            <p className="text-gray-700 text-sm mb-2 leading-relaxed">سيتم مسح جميع بيانات هذه المؤسسة بشكل كامل:</p>
-            <ul className="text-sm text-gray-600 mb-5 space-y-1 pr-4 list-disc">
-              <li>بيانات الملف التعريفي</li>
-              <li>القوائم المالية</li>
-              <li>الأداء المؤسسي والاستجابات</li>
-              <li>الامتثال وسجل المخاطر</li>
-            </ul>
-            <p className="text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 mb-5">
-              ستتمكن المؤسسة من تجربة النظام من البداية. هذا الإجراء لا يمكن التراجع عنه.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => handleReset(confirmResetId)}
-                className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2"
-              >
-                <RotateCcw size={16} /> نعم، إعادة التعيين
-              </button>
-              <button
-                onClick={() => setConfirmResetId(null)}
-                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl transition-colors"
-              >
-                إلغاء
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

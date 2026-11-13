@@ -8,7 +8,7 @@ import { CURRENT_YEAR } from '../constants';
 import { 
     TrendingUp, TrendingDown, UploadCloud, Save, AlertTriangle, 
     FileText, CheckCircle2, XCircle, Landmark, Briefcase, Scale,
-    Banknote, ArrowRightLeft, Paperclip, ShieldCheck, Lock
+    Banknote, ArrowRightLeft, Paperclip, ShieldCheck, Lock, Info
 } from 'lucide-react';
 
 const FinancialReports: React.FC = () => {
@@ -212,7 +212,7 @@ const FinancialReports: React.FC = () => {
                   <input 
                     type="text" 
                     disabled={isLocked}
-                    placeholder="اسم المكتب / المدقق"
+                    placeholder="مثال: مكتب الهدى للتدقيق"
                     className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-gray-100 disabled:text-gray-500"
                     value={record.auditor_name}
                     onChange={(e) => handleInputChange('auditor_name', e.target.value)}
@@ -256,17 +256,17 @@ const FinancialReports: React.FC = () => {
               </div>
               <div className="p-4 space-y-4">
                   <div>
-                      <label className="block text-xs font-bold text-gray-600 mb-1">إجمالي الأصول</label>
+                       <label className="block text-xs font-bold text-gray-600 mb-1 flex items-center gap-1">إجمالي الأصول <Info size={13} className="text-gray-400" title="أدخل القيمة الإجمالية لأصول المؤسسة في نهاية السنة المالية." /></label>
                       <input type="number" disabled={isLocked} className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
-                          value={record.total_assets || ''} onChange={(e) => handleInputChange('total_assets', Number(e.target.value))} />
+                           placeholder="مثال: 120000" value={record.total_assets || ''} onChange={(e) => handleInputChange('total_assets', Number(e.target.value))} />
                   </div>
                   <div>
-                      <label className="block text-xs font-bold text-gray-600 mb-1">إجمالي الالتزامات</label>
+                       <label className="block text-xs font-bold text-gray-600 mb-1 flex items-center gap-1">إجمالي الالتزامات <Info size={13} className="text-gray-400" title="أدخل إجمالي الالتزامات المالية المستحقة على المؤسسة." /></label>
                       <input type="number" disabled={isLocked} className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
-                          value={record.total_liabilities || ''} onChange={(e) => handleInputChange('total_liabilities', Number(e.target.value))} />
+                           placeholder="مثال: 18000" value={record.total_liabilities || ''} onChange={(e) => handleInputChange('total_liabilities', Number(e.target.value))} />
                   </div>
                   <div className="pt-2 border-t border-gray-100">
-                      <label className="block text-xs font-bold text-navy-900 mb-1">صافي الأصول (المال الوقفي)</label>
+                       <label className="block text-xs font-bold text-navy-900 mb-1 flex items-center gap-1">صافي أصول الوقف <Info size={13} className="text-gray-400" title="يُحتسب تلقائياً بطرح إجمالي الالتزامات من إجمالي الأصول." /></label>
                       <input 
                         type="number" 
                         readOnly
@@ -285,14 +285,14 @@ const FinancialReports: React.FC = () => {
               </div>
               <div className="p-4 space-y-4">
                   <div>
-                      <label className="block text-xs font-bold text-gray-600 mb-1">إجمالي الإيرادات</label>
+                       <label className="block text-xs font-bold text-gray-600 mb-1 flex items-center gap-1">الإيرادات <Info size={13} className="text-gray-400" title="أدخل مجموع إيرادات المؤسسة خلال السنة المالية." /></label>
                       <input type="number" disabled={isLocked} className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-teal-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
-                          value={record.total_revenues || ''} onChange={(e) => handleInputChange('total_revenues', Number(e.target.value))} />
+                           placeholder="مثال: 120000" value={record.total_revenues || ''} onChange={(e) => handleInputChange('total_revenues', Number(e.target.value))} />
                   </div>
                   <div>
-                      <label className="block text-xs font-bold text-gray-600 mb-1">إجمالي المصروفات</label>
+                       <label className="block text-xs font-bold text-gray-600 mb-1 flex items-center gap-1">المصروفات <Info size={13} className="text-gray-400" title="أدخل مجموع المصروفات التي تكبدتها المؤسسة خلال السنة المالية." /></label>
                       <input type="number" disabled={isLocked} className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-teal-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
-                          value={record.total_expenses || ''} onChange={(e) => handleInputChange('total_expenses', Number(e.target.value))} />
+                           placeholder="مثال: 85000" value={record.total_expenses || ''} onChange={(e) => handleInputChange('total_expenses', Number(e.target.value))} />
                   </div>
                   <div className="pt-2 border-t border-gray-100">
                       <label className="block text-xs font-bold text-navy-900 mb-1">الفائض / العجز</label>
@@ -311,19 +311,19 @@ const FinancialReports: React.FC = () => {
               <div className="p-4 space-y-4">
                   <div>
                       <label className="block text-xs font-bold text-gray-600 mb-1">صافي النقد التشغيلي</label>
-                      <input type="number" disabled={isLocked} className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-orange-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
-                          value={record.operating_cash_flow || ''} onChange={(e) => handleInputChange('operating_cash_flow', Number(e.target.value))} />
+                       <input type="number" disabled={isLocked} placeholder="مثال: 35000" className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-orange-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
+                           value={record.operating_cash_flow || ''} onChange={(e) => handleInputChange('operating_cash_flow', Number(e.target.value))} />
                       <p className="text-[9px] text-gray-400 mt-0.5">يُقترح مطابقته للفائض (قابل للتعديل)</p>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-xs font-bold text-gray-600 mb-1">الاستثماري</label>
-                        <input type="number" disabled={isLocked} className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-orange-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
+                         <input type="number" disabled={isLocked} placeholder="مثال: -12000" className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-orange-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
                             value={record.investing_cash_flow || ''} onChange={(e) => handleInputChange('investing_cash_flow', Number(e.target.value))} />
                       </div>
                       <div>
                         <label className="block text-xs font-bold text-gray-600 mb-1">التمويلي</label>
-                        <input type="number" disabled={isLocked} className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-orange-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
+                         <input type="number" disabled={isLocked} placeholder="مثال: 5000" className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-orange-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
                             value={record.financing_cash_flow || ''} onChange={(e) => handleInputChange('financing_cash_flow', Number(e.target.value))} />
                       </div>
                   </div>
@@ -343,8 +343,8 @@ const FinancialReports: React.FC = () => {
               </div>
               <div className="p-4 space-y-4 h-full">
                   <div>
-                      <label className="block text-xs font-bold text-gray-600 mb-1">المصروفات الإدارية والرواتب</label>
-                      <input type="number" disabled={isLocked} className="w-full p-2 border border-gray-200 rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-purple-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
+                       <label className="block text-xs font-bold text-gray-600 mb-1 flex items-center gap-1">المصاريف الإدارية <Info size={13} className="text-gray-400" title="أدخل إجمالي المصاريف الإدارية والرواتب ضمن مصروفات السنة." /></label>
+                       <input type="number" disabled={isLocked} placeholder="مثال: 12000" className="w-full p-2 border border-gray-200 rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-purple-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
                           value={record.admin_general_expenses || ''} onChange={(e) => handleInputChange('admin_general_expenses', Number(e.target.value))} />
                       
                       {(record.total_expenses || 0) > 0 && (

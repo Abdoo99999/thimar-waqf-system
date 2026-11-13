@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Building2, ClipboardCheck, Scale, FileBarChart, Menu, X, ShieldAlert, Settings, LogOut, Lock, Send, Inbox, CheckCircle, RotateCcw, Landmark, RefreshCw, AlertTriangle, MessageSquarePlus, MessageSquare, KeyRound } from 'lucide-react';
+import { LayoutDashboard, Building2, ClipboardCheck, Scale, FileBarChart, Menu, X, ShieldAlert, Settings, LogOut, Lock, Send, Inbox, CheckCircle, RotateCcw, Landmark, RefreshCw, AlertTriangle, MessageSquarePlus, MessageSquare, KeyRound, Shield } from 'lucide-react';
 import { getSession, getSettings, getInstitutionProgress, getPendingEvaluationsCount, getEvaluationByInstAndYear, saveEvaluation, getUnreadFeedbackCount } from '../services/db';
 import { CURRENT_YEAR } from '../constants';
 import { useUi } from '../contexts/UiContext';
@@ -246,9 +246,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const navItems = allNavItems.filter(item => role && item.roles.includes(role));
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden font-sans text-right" dir="rtl">
+    <div className="flex h-[100dvh] bg-gray-50 dark:bg-gray-900 overflow-hidden font-sans text-right" dir="rtl">
       {/* Sidebar - Desktop */}
-      <aside className={`fixed inset-y-0 right-0 z-50 w-64 flex flex-col bg-navy-900 dark:bg-black text-white transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 shadow-2xl ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 right-0 z-50 h-[100dvh] max-h-[100dvh] w-64 flex flex-col bg-navy-900 dark:bg-black text-white transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 shadow-2xl ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="flex items-center justify-between p-4 border-b border-navy-800 min-h-[5rem]">
           <div className="flex items-center gap-3">
              <div className="w-10 h-10 min-w-[2.5rem] bg-white rounded-full p-1 overflow-hidden flex items-center justify-center shadow-md transition-transform hover:scale-110 duration-300">
@@ -277,7 +277,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             </div>
         </div>
         
-        <nav className="p-4 space-y-2 flex-1 min-h-0 overflow-y-auto mt-2 scrollbar-thin scrollbar-thumb-navy-700">
+        <nav className="p-4 pb-6 space-y-2 flex-1 min-h-0 overflow-y-auto overscroll-contain mt-2 scrollbar-thin scrollbar-thumb-navy-700">
           {navItems.map((item) => {
               const locked = isRouteLocked(item.to, role, progress);
               return (
@@ -295,13 +295,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           >
              <KeyRound size={20} />
              <span className="font-medium">تغيير كلمة المرور</span>
-          </button>
-          <button 
-            onClick={logout}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-300 text-red-300 hover:bg-red-900/20 hover:text-red-200 hover:scale-105 mt-4 group"
-          >
-             <LogOut size={20} className="group-hover:-translate-x-1 transition-transform"/>
-             <span className="font-medium">تسجيل الخروج</span>
           </button>
         </nav>
         <div className="shrink-0 w-full p-4 border-t border-navy-800 text-xs text-gray-400 text-center">
@@ -346,7 +339,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                    <p className="text-xs text-gold-600 dark:text-gold-400">{role === 'admin' ? 'مدير النظام' : 'مستخدم مؤسسة'}</p>
                 </div>
                 <div className={`w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center font-bold text-white shadow-md shrink-0 ${role === 'admin' ? 'bg-navy-800' : 'bg-teal-600'}`}>
-                    {user?.charAt(0).toUpperCase()}
+                    {role === 'admin' ? <Shield size={19} /> : (user?.trim().split(/\s+/).find(word => word !== 'مؤسسة' && word !== 'مدير')?.charAt(0) || user?.charAt(0))?.toUpperCase()}
                 </div>
             </div>
         </header>

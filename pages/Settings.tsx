@@ -1,16 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Download, Upload, Activity, User, Calendar, FileText, Zap, RefreshCw, Trash2, RotateCcw } from 'lucide-react';
+import { Save, Download, Upload, RefreshCw } from 'lucide-react';
 import { getSettings, saveSettings, refreshData, exportBackup, importBackup } from '../services/db';
 import { useUi } from '../contexts/UiContext';
-
-// Mock Data for Audit Log
-const MOCK_AUDIT_LOGS = [
-    { id: 1, user: 'مدير النظام', action: 'تحديث الإعدادات العامة', date: '2024-05-20 10:30 ص' },
-    { id: 2, user: 'مؤسسة الإمام جابر', action: 'تحديث بيانات المؤسسة', date: '2024-05-20 09:15 ص' },
-    { id: 3, user: 'مؤسسة البريمي', action: 'إضافة تقييم جديد', date: '2024-05-19 02:20 م' },
-    { id: 4, user: 'مدير النظام', action: 'إنشاء نسخة احتياطية', date: '2024-05-18 04:45 م' },
-    { id: 5, user: 'مؤسسة مسقط', action: 'رفع مستندات الامتثال', date: '2024-05-18 11:10 ص' },
-];
 
 const Settings: React.FC = () => {
   const [formData, setFormData] = useState<any>({
@@ -139,33 +130,6 @@ const Settings: React.FC = () => {
                 <Upload size={18} /> {restoring ? 'جاري الاستعادة...' : 'استيراد قاعدة البيانات'}
                 <input type="file" accept=".json" className="hidden" disabled={restoring} onChange={importData} />
             </label>
-        </div>
-      </div>
-      
-      {/* Audit Log Section */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="p-6 border-b border-gray-100 flex justify-between items-center">
-            <div>
-                <h3 className="font-bold text-lg mb-2 text-navy-900 flex items-center gap-2"><Activity size={20} className="text-teal-600"/> سجل التدقيق</h3>
-                <p className="text-gray-500 text-sm">آخر الأنشطة والإجراءات التي تمت على النظام</p>
-            </div>
-            <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded border border-gray-200">آخر 5 عمليات</span>
-        </div>
-        <div className="overflow-x-auto">
-            <table className="w-full text-right text-sm">
-                <thead className="bg-gray-50 text-gray-600 border-b border-gray-100">
-                    <tr><th className="p-4 font-bold">المستخدم</th><th className="p-4 font-bold">الإجراء</th><th className="p-4 font-bold">التاريخ</th></tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                    {MOCK_AUDIT_LOGS.map((log) => (
-                        <tr key={log.id} className="hover:bg-gray-50 transition-colors">
-                            <td className="p-4 flex items-center gap-2 text-navy-900 font-medium"><div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center"><User size={14} /></div>{log.user}</td>
-                            <td className="p-4 text-gray-600"><span className="inline-flex items-center gap-2"><FileText size={14} className="text-gray-400" />{log.action}</span></td>
-                            <td className="p-4 text-gray-500 font-mono text-xs"><span className="inline-flex items-center gap-2 bg-gray-50 px-2 py-1 rounded"><Calendar size={12} />{log.date}</span></td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
         </div>
       </div>
     </div>

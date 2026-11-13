@@ -1,6 +1,7 @@
 
 import React, { useMemo, useEffect, useState } from 'react';
-import { getInstitutions, getEvaluations, getComplianceRecords, getAllResponses, getRisks, getIndicators, getFinancialRecords } from '../services/db';
+import { getInstitutions, getEvaluations, getComplianceRecords, getAllResponses, getRisks, getIndicators, getFinancialRecords, getSettings, saveSettings } from '../services/db';
+import { buildDemoData } from '../services/demoData';
 import { Institution, Evaluation, Response, RiskRegisterItem, Indicator, FinancialRecord } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, AreaChart, Area, CartesianGrid, LineChart, Line, LabelList, Legend, ComposedChart } from 'recharts';
 import { Building, AlertTriangle, TrendingUp, TrendingDown, MapPin, Shield, Wallet, Users, Target, Activity, Coins, Medal, Briefcase, Filter, Trophy, Star, BarChart2, Scale, Banknote, Layers, Calendar, ArrowRightLeft } from 'lucide-react';
@@ -10,6 +11,8 @@ import { GOVERNORATES } from '../constants';
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#f97316', '#ef4444'];
 const GOV_COLORS = ['#3366cc', '#dc3912', '#ff9900', '#109618', '#990099', '#0099c6', '#dd4477', '#66aa00', '#b82e2e', '#316395', '#994499'];
 const RANK_COLORS = ['#fbbf24', '#94a3b8', '#b45309', '#475569', '#475569']; 
+const EmptyData = () => <div className="flex h-full min-h-24 items-center justify-center text-sm text-gray-400">لا توجد بيانات بعد</div>;
+const ChartState = ({ hasData, children }: { hasData: boolean; children: React.ReactNode }) => hasData ? <>{children}</> : <EmptyData />;
 
 // --- Components ---
 const InfographicCard = ({ title, value, icon: Icon, gradient, subtext, footer }: any) => (
@@ -76,18 +79,42 @@ const Dashboard: React.FC = () => {
   const [responses, setResponses] = useState<Response[]>([]);
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [financials, setFinancials] = useState<FinancialRecord[]>([]);
+  const [demoMode, setDemoMode] = useState(() => (getSettings() as { demoMode?: boolean }).demoMode === true);
   
   // Years List 2024 - 2030
   const availableYears = Array.from({length: 7}, (_, i) => 2024 + i);
 
   useEffect(() => {
-    setInstitutions(getInstitutions() || []);
-    setEvaluations(getEvaluations() || []);
-    setRisks(getRisks() || []);
-    setResponses(getAllResponses() || []);
-    setIndicators(getIndicators() || []);
-    setFinancials(getFinancialRecords() || []);
+    const realInstitutions = getInstitutions() || [];
+    const currentIndicators = getIndicators() || [];
+    setIndicators(currentIndicators);
+    if (demoMode) {
+      const demo = buildDemoData(realInstitutions, currentIndicators);
+      setInstitutions(demo.institutions);
+      setEvaluations(demo.evaluations);
+      setRisks(demo.risks);
+      setResponses(demo.responses);
+      setFinancials(demo.financials);
+    } else {
+      setInstitutions(realInstitutions);
+      setEvaluations(getEvaluations() || []);
+      setRisks(getRisks() || []);
+      setResponses(getAllResponses() || []);
+      setFinancials(getFinancialRecords() || []);
+    }
+  }, [demoMode]);
+
+  useEffect(() => {
+    const syncDemoMode = () => setDemoMode((getSettings() as { demoMode?: boolean }).demoMode === true);
+    window.addEventListener('settingsChanged', syncDemoMode);
+    return () => window.removeEventListener('settingsChanged', syncDemoMode);
   }, []);
+
+  const toggleDemoMode = () => {
+    const next = !demoMode;
+    saveSettings({ ...getSettings(), demoMode: next });
+    setDemoMode(next);
+  };
 
   // Filter Institutions by ID (Year does not filter Institutions existence, only data)
   const filteredInstitutions = useMemo(() => currentWaqfId ? institutions.filter(i => i.id === currentWaqfId) : institutions, [currentWaqfId, institutions]);
@@ -118,7 +145,7 @@ const Dashboard: React.FC = () => {
          return matchesId && matchesYear;
      });
 
-     if (recordsToProcess.length === 0) return { hasData: false, adminRatio: 0, surplus: 0, cash: 0, netAssets: 0 };
+     if (recordsToProcess.length === 0) return { hasData: false, hasExpenses: false, adminRatio: 0, surplus: 0, cash: 0, netAssets: 0 };
 
      // If multiple records exist for same institution in same year (shouldn't happen but safe to handle), pick latest
      const latestMap = new Map();
@@ -146,6 +173,7 @@ const Dashboard: React.FC = () => {
 
      return {
         hasData: true,
+        hasExpenses: totalExpenses > 0,
         adminRatio: avgAdminRatio,
         surplus: totalSurplus,
         cash: totalCash,
@@ -213,10 +241,10 @@ const Dashboard: React.FC = () => {
               year: year.toString(),
               globalAvg: globalAvg, // Can be null
               institutionScore: institutionScore, // Can be null
-              target: Number(targetScore.toFixed(1))
+              target: demoMode ? Number(targetScore.toFixed(1)) : null
           };
       });
-  }, [evaluations, responses, currentWaqfId, availableYears]);
+  }, [evaluations, responses, currentWaqfId, availableYears, demoMode]);
 
   // --- Other Data Memos ---
   const typeStats = useMemo(() => {
@@ -279,7 +307,7 @@ const Dashboard: React.FC = () => {
   }, [filteredResponses]);
 
   const radarData = useMemo(() => {
-      if (filteredResponses.length === 0) return [ { subject: 'الشرعي', A: 0, fullMark: 5 }, { subject: 'الإداري', A: 0, fullMark: 5 }, { subject: 'المالي', A: 0, fullMark: 5 }, { subject: 'الحوكمة', A: 0, fullMark: 5 }, { subject: 'الابتكار', A: 0, fullMark: 5 }, { subject: 'الاستدامة', A: 0, fullMark: 5 }];
+      if (filteredResponses.length === 0) return [];
       const axisScores: Record<string, { total: number, count: number }> = {};
       filteredResponses.forEach(r => {
           const ind = indicators.find(i => i.id === r.indicator_id);
@@ -296,7 +324,14 @@ const Dashboard: React.FC = () => {
     <div className="space-y-8 pb-10">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-6 gap-4">
          <div>
-            <h2 className="text-3xl font-extrabold text-navy-900 dark:text-white tracking-tight">لوحة القيادة الاستراتيجية</h2>
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="text-3xl font-extrabold text-navy-900 dark:text-white tracking-tight">لوحة القيادة الاستراتيجية</h2>
+              {demoMode && <span className="rounded-full border border-amber-300 bg-amber-100 px-3 py-1 text-sm font-bold text-amber-800">بيانات توضيحية – ليست حقيقية</span>}
+            </div>
+            <label className="mt-3 inline-flex cursor-pointer items-center gap-2 text-sm font-bold text-navy-800">
+              <input type="checkbox" role="switch" checked={demoMode} onChange={toggleDemoMode} className="h-5 w-5 accent-amber-600" />
+              وضع العرض التوضيحي
+            </label>
             <p className="text-gray-500 dark:text-gray-400 mt-2 text-lg">نظرة شاملة على الأصول البشرية، المالية، ومستويات الأداء</p>
          </div>
          
@@ -342,7 +377,7 @@ const Dashboard: React.FC = () => {
 
       {/* 1. TOP CARDS (HERO) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <InfographicCard title="حجم رأس المال الوقفي" value={`${totalCapital.toLocaleString()} ر.ع.`} icon={Coins} gradient="bg-gradient-to-br from-indigo-900 to-navy-900" subtext="القيمة السوقية التقديرية" footer={<span className="text-blue-200">النمو السنوي: +4.2%</span>}/>
+        <InfographicCard title="حجم رأس المال الوقفي" value={totalCapital > 0 ? `${totalCapital.toLocaleString()} ر.ع.` : 'لا توجد بيانات بعد'} icon={Coins} gradient="bg-gradient-to-br from-indigo-900 to-navy-900" subtext="القيمة السوقية التقديرية" footer={demoMode ? <span className="text-blue-200">النمو السنوي: +4.2%</span> : null}/>
         
         <div className="relative overflow-hidden rounded-2xl shadow-xl bg-white dark:bg-gray-800 p-6 border border-gray-100 dark:border-gray-700 flex items-center justify-between transition-all hover:scale-105">
             <div className="w-1/2">
@@ -352,10 +387,10 @@ const Dashboard: React.FC = () => {
                     <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-amber-500"></div><span className="text-navy-900 font-bold text-xl">{typeStats[1].value}</span><span className="text-xs text-gray-500">خاصة</span></div>
                 </div>
             </div>
-            <div className="w-1/2 h-32"><ResponsiveContainer><PieChart><Pie data={typeStats} innerRadius={25} outerRadius={40} dataKey="value" paddingAngle={5}>{typeStats.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}</Pie></PieChart></ResponsiveContainer></div>
+            <div className="w-1/2 h-32"><ChartState hasData={typeStats.some(item => item.value > 0)}><ResponsiveContainer><PieChart><Pie data={typeStats} innerRadius={25} outerRadius={40} dataKey="value" paddingAngle={5}>{typeStats.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}</Pie></PieChart></ResponsiveContainer></ChartState></div>
         </div>
 
-        <InfographicCard title={`متوسط الأداء (${currentYear})`} value={averageScore} icon={Activity} gradient="bg-gradient-to-br from-purple-700 to-purple-900" subtext="من 5.0"/>
+        <InfographicCard title={`متوسط الأداء (${currentYear})`} value={filteredResponses.length ? averageScore : 'لا توجد بيانات بعد'} icon={Activity} gradient="bg-gradient-to-br from-purple-700 to-purple-900" subtext="من 5.0"/>
         <div className="relative overflow-hidden rounded-2xl shadow-xl bg-gradient-to-br from-red-600 to-red-800 text-white p-6 hover:scale-105 transition-all">
             <div className="relative z-10"><div className="flex justify-between items-start"><p className="text-red-100 font-medium text-lg">المخاطر الحرجة</p><div className="bg-white/20 p-2 rounded-lg"><AlertTriangle size={24} /></div></div><div className="flex items-baseline mt-4"><h3 className="text-6xl font-extrabold tracking-tight">{riskMatrix.high}</h3><span className="mr-2 text-red-200 font-medium">حالة</span></div><p className="text-xs text-red-100 mt-2 opacity-80">تتطلب تدخلاً فورياً</p></div>
         </div>
@@ -375,6 +410,7 @@ const Dashboard: React.FC = () => {
                 <div className="bg-blue-50/50 rounded-2xl p-4 flex flex-col items-center justify-center border border-blue-100">
                     <h4 className="text-blue-800 font-bold mb-3 flex items-center gap-2"><Layers size={18}/> المركز المالي (صافي الأصول)</h4>
                     <div className="relative h-40 w-40 transition-transform duration-500 hover:scale-110">
+                        <ChartState hasData={financialStats.hasData}>
                         <ResponsiveContainer>
                             <PieChart>
                                 <Pie
@@ -393,6 +429,7 @@ const Dashboard: React.FC = () => {
                              <span className="text-xl font-black text-navy-900">{(financialStats.netAssets / 1000000).toFixed(2)}M</span>
                              <span className="text-[10px] text-gray-500">مليون ر.ع</span>
                         </div>
+                        </ChartState>
                     </div>
                 </div>
 
@@ -400,6 +437,7 @@ const Dashboard: React.FC = () => {
                 <div className={`rounded-2xl p-4 flex flex-col items-center justify-center border ${financialStats.surplus >= 0 ? 'bg-emerald-50/50 border-emerald-100' : 'bg-red-50/50 border-red-100'}`}>
                     <h4 className={`font-bold mb-3 flex items-center gap-2 ${financialStats.surplus >= 0 ? 'text-emerald-800' : 'text-red-800'}`}><TrendingUp size={18}/> الأداء المالي (الفائض)</h4>
                     <div className="relative h-40 w-40 transition-transform duration-500 hover:scale-110">
+                        <ChartState hasData={financialStats.hasData}>
                         <ResponsiveContainer>
                             <PieChart>
                                 <Pie
@@ -418,6 +456,7 @@ const Dashboard: React.FC = () => {
                              <span className="text-xl font-black text-navy-900">{(financialStats.surplus / 1000).toFixed(1)}K</span>
                              <span className="text-[10px] text-gray-500">ألف ر.ع</span>
                         </div>
+                        </ChartState>
                     </div>
                 </div>
 
@@ -425,6 +464,7 @@ const Dashboard: React.FC = () => {
                 <div className="bg-orange-50/50 rounded-2xl p-4 flex flex-col items-center justify-center border border-orange-100">
                     <h4 className="text-orange-800 font-bold mb-3 flex items-center gap-2"><Banknote size={18}/> المصاريف الإدارية والرواتب</h4>
                     <div className="relative h-40 w-40 transition-transform duration-500 hover:scale-110">
+                        <ChartState hasData={financialStats.hasExpenses}>
                         <ResponsiveContainer>
                             <PieChart>
                                 <Pie
@@ -444,6 +484,7 @@ const Dashboard: React.FC = () => {
                              <span className="text-[10px] text-gray-500 mt-1">من إجمالي المصروفات</span>
                              <span className="text-xs text-orange-600 font-bold mt-1">الحد الأقصى 20%</span>
                         </div>
+                        </ChartState>
                     </div>
                 </div>
 
@@ -455,13 +496,13 @@ const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 lg:col-span-2 hover:shadow-xl transition-all">
             <h3 className="text-xl font-bold text-navy-900 dark:text-white mb-6 flex items-center gap-2"><MapPin className="text-teal-600" /> التوزيع الجغرافي</h3>
-            <div className="h-96"><ResponsiveContainer width="100%" height="100%"><BarChart data={govStats} margin={{ top: 20, right: 30, left: 20, bottom: 120 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" /><XAxis dataKey="name" angle={-45} textAnchor="end" interval={0} tick={{fontSize: 12, fill: '#4b5563', dy: 10}}/><YAxis axisLine={false} tickLine={false} allowDecimals={false}/><Tooltip cursor={{fill: '#f0f4f8'}} contentStyle={{borderRadius: '10px'}} /><Bar dataKey="value" radius={[8, 8, 0, 0]} barSize={40}>{govStats.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}<LabelList dataKey="value" position="top" fill="#374151" fontSize={14} fontWeight="bold" /></Bar></BarChart></ResponsiveContainer></div>
+            <div className="h-96"><ChartState hasData={govStats.some(item => item.value > 0)}><ResponsiveContainer width="100%" height="100%"><BarChart data={govStats} margin={{ top: 20, right: 30, left: 20, bottom: 120 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" /><XAxis dataKey="name" angle={-45} textAnchor="end" interval={0} tick={{fontSize: 12, fill: '#4b5563', dy: 10}}/><YAxis axisLine={false} tickLine={false} allowDecimals={false}/><Tooltip cursor={{fill: '#f0f4f8'}} contentStyle={{borderRadius: '10px'}} /><Bar dataKey="value" radius={[8, 8, 0, 0]} barSize={40}>{govStats.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}<LabelList dataKey="value" position="top" fill="#374151" fontSize={14} fontWeight="bold" /></Bar></BarChart></ResponsiveContainer></ChartState></div>
         </div>
 
         <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 hover:shadow-xl transition-all">
           <h3 className="text-xl font-bold text-navy-900 dark:text-white mb-6 flex items-center gap-2"><Medal className="text-gold-500" /> الأعلى أداءً (التوب 5)</h3>
           <div className="h-96 overflow-y-auto pr-2 scrollbar-thin">
-             {topInstitutions.length > 0 ? ( <div className="space-y-3">{topInstitutions.map((inst, index) => <TopListItem key={inst.name} rank={index + 1} name={inst.name} score={inst.score} />)}</div> ) : ( <div className="flex flex-col items-center justify-center h-full text-gray-400"><Trophy size={48} className="text-gray-300 mb-4" /><p>لا توجد بيانات لسنة {currentYear}</p></div> )}
+             {topInstitutions.length > 0 ? ( <div className="space-y-3">{topInstitutions.map((inst, index) => <TopListItem key={inst.name} rank={index + 1} name={inst.name} score={inst.score} />)}</div> ) : <EmptyData />}
           </div>
         </div>
       </div>
@@ -470,12 +511,12 @@ const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 hover:shadow-xl transition-all">
              <h3 className="text-xl font-bold text-navy-900 dark:text-white mb-6 flex items-center gap-2"><Briefcase className="text-blue-600" /> تصنيف المؤسسات حسب رأس المال</h3>
-             <div className="h-96"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={capitalStats} cx="50%" cy="50%" innerRadius={80} outerRadius={120} paddingAngle={5} dataKey="value">{capitalStats.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} strokeWidth={0} />)}</Pie><Tooltip contentStyle={{borderRadius: '10px'}} /><Legend verticalAlign="bottom" height={36} iconType="circle" /></PieChart></ResponsiveContainer></div>
+             <div className="h-96"><ChartState hasData={capitalStats.some(item => item.value > 0)}><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={capitalStats} cx="50%" cy="50%" innerRadius={80} outerRadius={120} paddingAngle={5} dataKey="value">{capitalStats.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} strokeWidth={0} />)}</Pie><Tooltip contentStyle={{borderRadius: '10px'}} /><Legend verticalAlign="bottom" height={36} iconType="circle" /></PieChart></ResponsiveContainer></ChartState></div>
         </div>
 
         <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 hover:shadow-xl transition-all">
             <h3 className="text-xl font-bold text-navy-900 dark:text-white mb-6 flex items-center gap-2"><Shield className="text-blue-600" /> توازن الأداء المؤسسي ({currentYear})</h3>
-            <div className="h-96"><ResponsiveContainer width="100%" height="100%"><RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}><PolarGrid gridType="polygon" stroke="#e5e7eb" /><PolarAngleAxis dataKey="subject" tick={RadarCustomTick} /><PolarRadiusAxis angle={30} domain={[0, 5]} tick={false} axisLine={false} /><Radar name="الأداء الحالي" dataKey="A" stroke="#2563eb" strokeWidth={3} fill="#3b82f6" fillOpacity={0.6} /><Tooltip contentStyle={{ borderRadius: '12px' }} /></RadarChart></ResponsiveContainer></div>
+            <div className="h-96"><ChartState hasData={radarData.length > 0}><ResponsiveContainer width="100%" height="100%"><RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}><PolarGrid gridType="polygon" stroke="#e5e7eb" /><PolarAngleAxis dataKey="subject" tick={RadarCustomTick} /><PolarRadiusAxis angle={30} domain={[0, 5]} tick={false} axisLine={false} /><Radar name="الأداء الحالي" dataKey="A" stroke="#2563eb" strokeWidth={3} fill="#3b82f6" fillOpacity={0.6} /><Tooltip contentStyle={{ borderRadius: '12px' }} /></RadarChart></ResponsiveContainer></ChartState></div>
         </div>
       </div>
 
@@ -484,9 +525,11 @@ const Dashboard: React.FC = () => {
         <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 hover:shadow-xl transition-all">
             <h3 className="text-xl font-bold text-navy-900 dark:text-white mb-2 flex items-center gap-2"><Users className="text-teal-600" /> نسبة التعمين</h3>
             <div className="h-72 relative flex flex-col justify-center items-center overflow-hidden">
+                <ChartState hasData={employeeStats.total > 0}>
                 <div className="w-full h-full absolute inset-0"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={employeeStats.pieData} cx="50%" cy="70%" startAngle={180} endAngle={0} innerRadius="60%" outerRadius="85%" paddingAngle={0} dataKey="value" stroke="none">{employeeStats.pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}</Pie><Tooltip contentStyle={{borderRadius: '10px'}} /></PieChart></ResponsiveContainer></div>
                 <div className="absolute inset-0 pointer-events-none"><div className="absolute left-1/2 top-[70%] w-0 h-0"><div className="w-1 h-24 bg-gray-800 absolute left-[-2px] bottom-0 rounded-t-full origin-bottom transition-transform duration-1000 ease-out" style={{ transform: `rotate(${-90 + (employeeStats.rate / 100) * 180}deg)` }}></div><div className="w-4 h-4 bg-navy-900 rounded-full absolute -left-2 -top-2 border-2 border-white shadow-md"></div></div></div>
                 <div className="absolute top-[75%] left-1/2 transform -translate-x-1/2 text-center"><span className="text-3xl font-black text-navy-900 block">{employeeStats.rate}%</span><span className="text-xs text-gray-500 font-bold uppercase tracking-wider">تكوين القوى البشرية</span></div>
+                </ChartState>
             </div>
             <div className="w-full flex justify-around mt-2 pt-4 border-t border-gray-100"><div className="text-center"><p className="text-xs text-gray-400">الإجمالي</p><p className="text-lg font-bold text-navy-900">{employeeStats.total}</p></div><div className="text-center border-x border-gray-100 px-6"><p className="text-xs text-gray-400">عماني</p><p className="text-lg font-bold text-teal-600">{employeeStats.omani}</p></div><div className="text-center"><p className="text-xs text-gray-400">غير عماني</p><p className="text-lg font-bold text-indigo-500">{employeeStats.nonOmani}</p></div></div>
         </div>
@@ -499,6 +542,7 @@ const Dashboard: React.FC = () => {
                  </h3>
              </div>
              <div className="h-64">
+                 <ChartState hasData={financialStats.hasData}>
                  <ResponsiveContainer width="100%" height="100%">
                      <BarChart data={financialEfficiencyData} barSize={60}>
                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
@@ -522,6 +566,7 @@ const Dashboard: React.FC = () => {
                          </Bar>
                      </BarChart>
                  </ResponsiveContainer>
+                 </ChartState>
              </div>
         </div>
       </div>
@@ -533,6 +578,7 @@ const Dashboard: React.FC = () => {
             {/* Subtle Texture for Depth */}
             <div className="absolute top-0 left-0 w-full h-full opacity-[0.03] pointer-events-none" style={{backgroundImage: 'radial-gradient(#4f46e5 1px, transparent 1px)', backgroundSize: '20px 20px'}}></div>
             
+            <ChartState hasData={strategyData.some(item => currentWaqfId ? item.institutionScore !== null : item.globalAvg !== null)}>
             <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={strategyData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                     <defs>
@@ -594,7 +640,7 @@ const Dashboard: React.FC = () => {
                     )}
 
                     {/* Line: Target (Dashed) */}
-                    <Line 
+                    {demoMode && <Line 
                         type="monotone" 
                         dataKey="target" 
                         stroke="#f59e0b" 
@@ -602,9 +648,10 @@ const Dashboard: React.FC = () => {
                         strokeDasharray="5 5" 
                         dot={false}
                         name="المسار المستهدف" 
-                    />
+                    />}
                 </ComposedChart>
             </ResponsiveContainer>
+            </ChartState>
         </div>
       </div>
     </div>
