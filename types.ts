@@ -201,4 +201,10 @@ export interface SystemFeedback {
   image?: string;
   submitted_at: string;
   is_read?: boolean;
+  status?: FeedbackStatus;   // حالة المعالجة لدى الوزارة
+  admin_reply?: string;      // رد الوزارة
+  replied_at?: string;
+  reply_seen?: boolean;      // هل اطّلعت المؤسسة على الرد
 }
+
+export type FeedbackStatus = 'new' | 'in_progress' | 'done';

@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import DeadlineNotice from '../components/DeadlineNotice';
 import { useUi } from '../contexts/UiContext';
 import { getInstitutionProgress, getEvaluationByInstAndYear, saveEvaluation } from '../services/db';
 import { CURRENT_YEAR } from '../constants';
@@ -53,6 +54,8 @@ const ReviewSubmit: React.FC = () => {
       <div className="flex items-center gap-3 mb-6">
         <h2 className="text-2xl font-bold text-navy-900">المراجعة والإرسال</h2>
       </div>
+
+      <DeadlineNotice done={isSubmitted || isApproved} />
 
       {/* Status Banner */}
       <div className={`p-6 rounded-xl border ${

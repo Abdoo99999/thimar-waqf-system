@@ -214,6 +214,17 @@ const Institutions: React.FC = () => {
       showToast('تم اختيار المؤسسة للعمل عليها', 'success');
   };
 
+  const openEdit = (inst: Institution) => {
+    let expDate = '';
+    if (inst.establishment_date) {
+      const d = new Date(inst.establishment_date);
+      d.setFullYear(d.getFullYear() + 3);
+      expDate = d.toISOString().split('T')[0];
+    }
+    setFormData({ ...inst, expiry_date: expDate } as any);
+    setShowForm(true);
+  };
+
   // --- Filtering & Pagination Logic ---
   const filtered = useMemo(() => {
     return list.filter(i => {
@@ -305,7 +316,41 @@ const Institutions: React.FC = () => {
         <Search className="absolute top-3.5 right-3 text-gray-400" size={18} />
       </div>}
 
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+      {/* الجوال: بطاقات بدل الجدول */}
+      <div className="md:hidden space-y-3">
+        {paginatedData.length > 0 ? paginatedData.map(inst => (
+          <div key={inst.id} className={`rounded-xl border bg-white dark:bg-gray-800 p-4 shadow-sm ${currentWaqfId === inst.id ? 'border-teal-400' : 'border-gray-100 dark:border-gray-700'}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-bold text-navy-900 dark:text-gray-100 flex items-center gap-1.5">
+                  {currentWaqfId === inst.id && <CheckCircle2 size={16} className="text-teal-500 shrink-0" />}{inst.name}
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">{[inst.governorate, inst.wilayat].filter(Boolean).join(' · ') || '—'}</p>
+              </div>
+              <span className={`shrink-0 px-2 py-1 rounded text-xs ${inst.type === 'وقفية عامة' ? 'bg-teal-100 text-teal-800' : 'bg-gold-100 text-gold-800'}`}>{inst.type}</span>
+            </div>
+            <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
+              <div><dt className="text-gray-400">رقم القرار</dt><dd className="font-mono text-gray-700 dark:text-gray-300">{inst.license_number || '—'}</dd></div>
+              <div><dt className="text-gray-400">تأسيس المجلس</dt><dd className="text-gray-700 dark:text-gray-300">{inst.establishment_date || '—'}</dd></div>
+            </dl>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {role === 'user' && currentWaqfId !== inst.id && (
+                <button onClick={() => handleSelectContext(inst.id)} className="min-h-[44px] flex-1 rounded-lg bg-navy-100 text-navy-800 text-sm font-bold">اختيار</button>
+              )}
+              <button onClick={() => openEdit(inst)} className="min-h-[44px] flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-50 text-blue-700 text-sm font-bold">
+                {getInstitutionProgress(inst.id).isLocked ? <><Eye size={16} /> عرض</> : <><Edit2 size={16} /> {(!inst.profile_completed && role === 'user') ? 'تعديل وتفعيل' : 'تعديل'}</>}
+              </button>
+              {role === 'admin' && (
+                <button onClick={() => handleDelete(inst.id)} aria-label={`حذف ${inst.name}`} className="min-h-[44px] px-4 rounded-lg bg-red-50 text-red-700"><Trash2 size={16} /></button>
+              )}
+            </div>
+          </div>
+        )) : (
+          <p className="rounded-xl bg-white p-6 text-center text-sm text-gray-400">لا توجد مؤسسات تطابق معايير البحث أو التصفية الحالية.</p>
+        )}
+      </div>
+
+      <div className="hidden md:block bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
         <div className="overflow-x-auto">
         <table className="w-full text-right min-w-[600px]">
           <thead className="bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-medium">
@@ -348,16 +393,7 @@ const Institutions: React.FC = () => {
                             اختيار
                         </button>
                     )}
-                    <button onClick={() => { 
-                        let expDate = '';
-                        if (inst.establishment_date) {
-                            const d = new Date(inst.establishment_date);
-                            d.setFullYear(d.getFullYear() + 3);
-                            expDate = d.toISOString().split('T')[0];
-                        }
-                        setFormData({...inst, expiry_date: expDate}); 
-                        setShowForm(true); 
-                        }} 
+                    <button onClick={() => openEdit(inst)} 
                         className={`text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-transform hover:scale-110 ${!inst.profile_completed && role === 'user' ? 'animate-bounce font-bold' : ''}`}
                     >
                         {getInstitutionProgress(inst.id).isLocked ? <Eye size={18} /> : <Edit2 size={18} />}

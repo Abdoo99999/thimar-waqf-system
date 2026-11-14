@@ -279,6 +279,22 @@ export const markFeedbackRead = (id: string) => {
   if (f) upsert(DB_KEYS.FEEDBACK, { ...f, is_read: true });
 };
 export const getUnreadFeedbackCount = () => getFeedback().filter(f => !f.is_read).length;
+// للمؤسسة: ردود الوزارة التي لم تطّلع عليها بعد
+export const getUnseenRepliesCount = () => getFeedback().filter(f => f.admin_reply && !f.reply_seen).length;
+export const markRepliesSeen = () => {
+  getFeedback().filter(f => f.admin_reply && !f.reply_seen).forEach(f => upsert(DB_KEYS.FEEDBACK, { ...f, reply_seen: true }));
+};
+export const replyToFeedback = (id: string, status: SystemFeedback['status'], reply: string) => {
+  const f = getFeedback().find(x => x.id === id);
+  if (!f) return Promise.resolve();
+  const text = reply.trim();
+  const changedReply = text !== (f.admin_reply || '');
+  return upsert(DB_KEYS.FEEDBACK, {
+    ...f, status, is_read: true, admin_reply: text || undefined,
+    replied_at: changedReply ? (text ? new Date().toISOString() : undefined) : f.replied_at,
+    reply_seen: changedReply ? false : f.reply_seen,
+  });
+};
 
 // ─── إعادة مؤسسة للوضع الأولي (للمدير) ──────────────────────────────────────
 export const resetInstitution = async (id: string) => {
@@ -288,9 +304,9 @@ export const resetInstitution = async (id: string) => {
 };
 
 // ─── النسخ الاحتياطي (للمدير) ───────────────────────────────────────────────
-export const exportBackup = async () => {
+export const exportBackup = async (withFiles = false) => {
   await writeQueue;
-  return request('GET', '/admin/export');
+  return request('GET', `/admin/export${withFiles ? '?files=1' : ''}`);
 };
 export const importBackup = async (backup: any) => {
   await writeQueue;

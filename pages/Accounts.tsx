@@ -88,7 +88,35 @@ const Accounts: React.FC = () => {
               </div>
             </div>
           )}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+          {/* الجوال: بطاقات بدل الجدول */}
+          <div className="md:hidden space-y-3">
+            {accounts.map(acc => (
+              <div key={acc.institution_id} className={`rounded-xl border bg-white p-4 shadow-sm ${resetDone === acc.institution_id ? 'border-green-300 bg-green-50' : 'border-gray-200'}`}>
+                <p className="font-bold text-navy-900">{getInstName(acc.institution_id)}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="font-mono bg-gray-100 px-2 py-1 rounded text-navy-900 font-bold">{acc.login_code}</span>
+                  <button onClick={() => copyText(acc.login_code, `code-${acc.institution_id}`)} aria-label="نسخ رمز الدخول" className="p-2 text-gray-400 hover:text-teal-600">
+                    {copied === `code-${acc.institution_id}` ? <CheckCircle size={16} className="text-teal-600" /> : <Copy size={16} />}
+                  </button>
+                  <span className={`text-xs font-bold px-2 py-1 rounded ${acc.must_change ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-700'}`}>
+                    {acc.must_change ? 'مؤقتة (يجب تغييرها)' : 'فعّالة'}
+                  </span>
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <button disabled={busy} onClick={() => handleNewPassword(acc.institution_id)} className="min-h-[44px] flex-1 rounded-lg border border-navy-200 bg-white text-navy-800 text-sm font-bold disabled:opacity-50">كلمة مرور جديدة</button>
+                  {resetDone === acc.institution_id ? (
+                    <span className="min-h-[44px] flex-1 flex items-center justify-center gap-1 text-green-600 text-sm font-bold"><CheckCircle size={14} /> تم الإعادة</span>
+                  ) : (
+                    <button onClick={() => setConfirmResetId(acc.institution_id)} className="min-h-[44px] flex-1 inline-flex items-center justify-center gap-1 rounded-lg text-sm font-bold text-orange-600 bg-orange-50 border border-orange-200">
+                      <RotateCcw size={14} /> إعادة تعيين
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[500px]">
               <thead className="bg-navy-900 text-white">

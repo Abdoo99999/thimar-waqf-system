@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import DeadlineNotice from '../components/DeadlineNotice';
+import { getDeadline } from '../utils/deadline';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -143,6 +145,15 @@ const Tracking: React.FC = () => {
           <Download size={17} /> تصدير Excel <span className="text-teal-200">({filteredRows.length})</span>
         </button>
       </header>
+
+      {getDeadline() && !loading && !error && (
+        <div className="flex flex-col gap-2">
+          <DeadlineNotice compact />
+          <p className="text-xs font-bold text-slate-500">
+            لم ترفع تقييمها بعد: {counts['not-started'] + counts['in-progress'] + counts.returned} مؤسسة
+          </p>
+        </div>
+      )}
 
       {error ? (
         <section className="rounded-3xl border border-rose-200 bg-rose-50 p-8 text-center" role="alert">

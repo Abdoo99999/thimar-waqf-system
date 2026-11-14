@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import DeadlineNotice from '../components/DeadlineNotice';
 import { Save, Download, Upload, RefreshCw } from 'lucide-react';
 import { getSettings, saveSettings, refreshData, exportBackup, importBackup } from '../services/db';
 import { useUi } from '../contexts/UiContext';
@@ -24,8 +25,16 @@ const Settings: React.FC = () => {
       setFormData((prev: any) => ({ ...prev, [name]: value }));
   };
 
+  const [deadline, setDeadline] = useState<string>(getSettings().evaluation_deadline || '');
+  const saveDeadline = (value: string) => {
+      setDeadline(value);
+      saveSettings({ ...getSettings(), evaluation_deadline: value || undefined });
+      showToast(value ? 'تم حفظ الموعد النهائي وسيظهر للمؤسسات' : 'تم إلغاء الموعد النهائي', 'success');
+  };
+
   const handleSave = () => {
-      saveSettings({ ...formData, darkMode: false });
+      // نحافظ على باقي الإعدادات (مثل وضع العرض والموعد النهائي) عند الحفظ
+      saveSettings({ ...getSettings(), ...formData, darkMode: false });
       showToast('تم حفظ الإعدادات بنجاح', 'success');
   };
 
@@ -52,26 +61,45 @@ const Settings: React.FC = () => {
       } catch (e: any) { showToast(e?.message || 'تعذر التصدير', 'error'); }
   };
 
+  // نسخة كاملة مع الملفات: تُنزَّل مباشرة من الخادم لأنها قد تكون كبيرة
+  const exportFull = () => {
+      const a = document.createElement('a');
+      a.href = '/api/admin/export?files=1';
+      a.click();
+      showToast('بدأ تنزيل النسخة الكاملة (قد يستغرق وقتاً حسب حجم الملفات)', 'info');
+  };
+
+  const [pendingImport, setPendingImport] = useState<{ data: any; name: string; files: number | null } | null>(null);
+
   const importData = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       e.target.value = '';
       if (!file) return;
-      if (!window.confirm('ستُستبدل كل بيانات النظام الحالية بمحتوى هذا الملف. هل تريد المتابعة؟')) return;
       const reader = new FileReader();
-      reader.onload = async (evt) => {
-          setRestoring(true);
+      reader.onload = (evt) => {
           try {
               const data = JSON.parse(evt.target?.result as string);
-              const r = await importBackup(data);
-              showToast('تم استعادة البيانات بنجاح', 'success');
-              if (r?.new_accounts?.length) {
-                  window.dispatchEvent(new CustomEvent('showCredentials', { detail: { title: 'حسابات جديدة للمؤسسات المستعادة', accounts: r.new_accounts } }));
-              }
-          } catch (err: any) {
-              showToast(err?.message || 'خطأ في الملف', 'error');
-          } finally { setRestoring(false); }
+              if (!data || data.version !== 2 || !Array.isArray(data.records)) throw new Error('bad');
+              setPendingImport({ data, name: file.name, files: Array.isArray(data.files) ? data.files.length : null });
+          } catch {
+              showToast('ملف النسخة الاحتياطية غير صالح', 'error');
+          }
       };
       reader.readAsText(file);
+  };
+
+  const confirmImport = async () => {
+      if (!pendingImport) return;
+      setRestoring(true);
+      try {
+          const r = await importBackup(pendingImport.data);
+          showToast(r?.files_restored != null ? `تم استعادة البيانات و${r.files_restored} ملف` : 'تم استعادة البيانات (الملفات الحالية بقيت كما هي)', 'success');
+          if (r?.new_accounts?.length) {
+              window.dispatchEvent(new CustomEvent('showCredentials', { detail: { title: 'حسابات جديدة للمؤسسات المستعادة', accounts: r.new_accounts } }));
+          }
+      } catch (err: any) {
+          showToast(err?.message || 'تعذر الاستعادة', 'error');
+      } finally { setRestoring(false); setPendingImport(null); }
   };
 
   return (
@@ -103,6 +131,34 @@ const Settings: React.FC = () => {
         </div>
       </div>
 
+      {/* Evaluation deadline */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="p-6 border-b border-gray-100">
+            <h3 className="font-bold text-lg mb-2 text-navy-900">الموعد النهائي لرفع التقييم</h3>
+            <p className="text-gray-500 text-sm">يظهر للمؤسسات في صفحتها الرئيسية وصفحة المراجعة والإرسال مع عدّاد للأيام الباقية. لا يمنع الرفع بعد انتهائه.</p>
+        </div>
+        <div className="p-6 flex flex-col sm:flex-row sm:items-end gap-4">
+            <div>
+                <label htmlFor="deadline" className="block text-sm font-medium mb-1 text-gray-700">التاريخ</label>
+                <input id="deadline" type="date" value={deadline} onChange={e => setDeadline(e.target.value)}
+                    className="min-h-[44px] p-2 border rounded-lg bg-gray-50 text-gray-900 border-gray-200 outline-none focus:ring-2 focus:ring-navy-800" />
+            </div>
+            <div className="flex gap-2">
+                <button type="button" onClick={() => saveDeadline(deadline)} disabled={!deadline}
+                    className="min-h-[44px] bg-navy-800 text-white px-5 rounded-lg flex items-center gap-2 hover:bg-navy-900 disabled:opacity-50 font-medium">
+                    <Save size={18} /> حفظ الموعد
+                </button>
+                {getSettings().evaluation_deadline && (
+                    <button type="button" onClick={() => saveDeadline('')}
+                        className="min-h-[44px] px-4 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium">
+                        إلغاء الموعد
+                    </button>
+                )}
+            </div>
+        </div>
+        <div className="px-6 pb-6"><DeadlineNotice compact /></div>
+      </div>
+
       {/* Data refresh */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-6 flex flex-col md:flex-row gap-4 items-center justify-between">
@@ -120,17 +176,35 @@ const Settings: React.FC = () => {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-6 border-b border-gray-100">
             <h3 className="font-bold text-lg mb-2 text-blue-600">النسخ الاحتياطي واستعادة البيانات</h3>
-            <p className="text-gray-500 text-sm">تنزيل نسخة من كل بيانات النظام في الخادم، أو استعادتها. (كلمات المرور لا تدخل في النسخة)</p>
+            <p className="text-gray-500 text-sm">تنزيل نسخة من بيانات النظام في الخادم، أو استعادتها. كلمات المرور لا تدخل في النسخة.</p>
         </div>
-        <div className="p-6 flex gap-4">
-            <button onClick={exportData} className="border border-blue-600 text-blue-600 px-4 py-2 rounded-lg hover:bg-blue-50 flex items-center gap-2 transition-colors font-medium">
-                <Download size={18} /> تصدير قاعدة البيانات (JSON)
+        <div className="p-6 flex flex-wrap gap-3">
+            <button onClick={exportData} className="min-h-[44px] border border-blue-600 text-blue-600 px-4 py-2 rounded-lg hover:bg-blue-50 flex items-center gap-2 transition-colors font-medium">
+                <Download size={18} /> البيانات فقط (ملف صغير)
             </button>
-            <label className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2 cursor-pointer transition-colors shadow-md font-medium">
-                <Upload size={18} /> {restoring ? 'جاري الاستعادة...' : 'استيراد قاعدة البيانات'}
+            <button onClick={exportFull} className="min-h-[44px] border border-blue-600 text-blue-600 px-4 py-2 rounded-lg hover:bg-blue-50 flex items-center gap-2 transition-colors font-medium">
+                <Download size={18} /> نسخة كاملة مع الملفات المرفقة
+            </button>
+            <label className="min-h-[44px] bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2 cursor-pointer transition-colors shadow-md font-medium">
+                <Upload size={18} /> {restoring ? 'جاري الاستعادة...' : 'استعادة من نسخة احتياطية'}
                 <input type="file" accept=".json" className="hidden" disabled={restoring} onChange={importData} />
             </label>
         </div>
+        {pendingImport && (
+            <div className="mx-6 mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900 space-y-3" role="alert">
+                <p className="font-bold">تأكيد الاستعادة من: {pendingImport.name}</p>
+                <p>ستُستبدل <strong>كل بيانات النظام الحالية</strong> بمحتوى هذا الملف ({pendingImport.data.records.length} سجل).
+                   {pendingImport.files != null
+                     ? ` والملفات المرفقة الحالية ستُستبدل بالملفات الموجودة في النسخة (${pendingImport.files} ملف).`
+                     : ' هذه النسخة بدون ملفات، فالملفات المرفقة الحالية ستبقى كما هي.'}
+                   {' '}يُنصح بتنزيل نسخة كاملة من الوضع الحالي قبل المتابعة.</p>
+                <div className="flex gap-2">
+                    <button type="button" onClick={confirmImport} disabled={restoring} className="min-h-[44px] px-4 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold disabled:opacity-60">{restoring ? 'جاري الاستعادة...' : 'نعم، استعد'}</button>
+                    <button type="button" onClick={() => setPendingImport(null)} disabled={restoring} className="min-h-[44px] px-4 rounded-lg bg-white border border-gray-300 font-bold">إلغاء</button>
+                </div>
+            </div>
+        )}
+        <p className="px-6 pb-6 text-xs text-gray-500">النسخ الاحتياطية تحتوي بيانات المؤسسات وملفاتها؛ احفظها في مكان آمن ولا ترسلها عبر قنوات غير رسمية.</p>
       </div>
     </div>
   );

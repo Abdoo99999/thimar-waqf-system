@@ -106,7 +106,9 @@ const clientIp = (req) => (req.headers['x-forwarded-for'] || '').split(',')[0].t
 // ─── التطبيق ───────────────────────────────────────────────────────────────
 const app = express();
 app.set('trust proxy', true);
-app.use(express.json({ limit: '25mb' }));
+const jsonSmall = express.json({ limit: '25mb' });
+const jsonLarge = express.json({ limit: '1gb' });
+app.use((req, res, next) => (req.path === '/api/admin/import' ? jsonLarge : jsonSmall)(req, res, next));
 
 // السماح فقط بالطلبات من نفس الموقع لعمليات الكتابة (حماية من CSRF)
 app.use('/api', (req, res, next) => {
@@ -258,6 +260,16 @@ const checkUserWrite = async (s, collection, id, item, existing) => {
   if (owner !== s.institution_id) return 'لا يمكنك تعديل بيانات مؤسسة أخرى';
   if (existing && existing.institution_id !== s.institution_id) return 'لا يمكنك تعديل بيانات مؤسسة أخرى';
   if (collection === 'waqf_institutions' && !existing) return 'لا يمكن للمؤسسة إنشاء مؤسسة جديدة';
+  if (collection === 'waqf_feedback') {
+    // الرد والحالة من صلاحية المدير فقط؛ المؤسسة تستطيع فقط تعليم الرد كمقروء
+    const ADMIN_FIELDS = ['admin_reply', 'replied_at', 'status', 'is_read'];
+    if (existing) {
+      const strip = (o) => { const c = { ...o }; delete c.reply_seen; return JSON.stringify(c); };
+      if (strip(item) !== strip(existing.data)) return 'لا يمكن تعديل الملاحظة بعد إرسالها';
+    } else if (item.admin_reply || item.replied_at || (item.status && item.status !== 'new') || item.is_read) {
+      return 'بيانات غير صالحة';
+    }
+  }
   if (collection === 'waqf_evaluations') {
     const prev = existing?.data?.workflow_status;
     if (prev === 'submitted' || prev === 'approved') return 'التقييم مرفوع للاعتماد ولا يمكن تعديله';
@@ -395,8 +407,15 @@ app.post('/api/admin/institutions/:id/reset', requireAdmin, wrap(async (req, res
 app.get('/api/admin/export', requireAdmin, wrap(async (req, res) => {
   const { rows } = await pool.query('SELECT collection, id, institution_id, data, created_at, updated_at FROM app_records ORDER BY collection, created_at');
   const accounts = await pool.query('SELECT institution_id, login_code FROM app_accounts ORDER BY login_code');
-  res.setHeader('Content-Disposition', `attachment; filename="waqf-backup-${new Date().toISOString().slice(0, 10)}.json"`);
-  res.json({ version: 2, exported_at: new Date().toISOString(), records: rows, accounts: accounts.rows });
+  const withFiles = req.query.files === '1';
+  let files;
+  if (withFiles) {
+    const f = await pool.query('SELECT id, institution_id, name, mime, size, data, created_at FROM app_files ORDER BY created_at');
+    files = f.rows.map(r => ({ ...r, data: r.data.toString('base64') }));
+  }
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Disposition', `attachment; filename="waqf-backup-${withFiles ? 'full-' : ''}${stamp}.json"`);
+  res.json({ version: 2, exported_at: new Date().toISOString(), records: rows, accounts: accounts.rows, ...(withFiles ? { files } : {}) });
 }));
 
 // استعادة نسخة احتياطية (تستبدل كل السجلات، ولا تمس كلمات المرور)
@@ -412,12 +431,22 @@ app.post('/api/admin/import', requireAdmin, wrap(async (req, res) => {
       await client.query('INSERT INTO app_records (collection, id, institution_id, data) VALUES ($1, $2, $3, $4::jsonb)',
         [r.collection, r.id, r.institution_id, JSON.stringify(r.data)]);
     }
+    // نسخة كاملة فيها ملفات: تُستبدل الملفات أيضاً. نسخة بدون ملفات: تبقى الملفات الحالية كما هي
+    if (Array.isArray(b.files)) {
+      await client.query('DELETE FROM app_files');
+      for (const f of b.files) {
+        if (!f || !f.id || !f.institution_id || typeof f.data !== 'string') continue;
+        const buf = Buffer.from(f.data, 'base64');
+        await client.query('INSERT INTO app_files (id, institution_id, name, mime, size, data, created_at) VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7, now()))',
+          [f.id, f.institution_id, String(f.name || 'file').slice(0, 255), String(f.mime || 'application/octet-stream'), buf.length, buf, f.created_at || null]);
+      }
+    }
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
   const created = [];
   const { rows } = await pool.query("SELECT id FROM app_records WHERE collection = 'waqf_institutions' AND id NOT IN (SELECT institution_id FROM app_accounts)");
   for (const r of rows) created.push(await createAccount(r.id));
-  res.json({ ok: true, new_accounts: created });
+  res.json({ ok: true, new_accounts: created, files_restored: Array.isArray(b.files) ? b.files.length : null });
 }));
 
 // ─── الملفات المرفقة ───

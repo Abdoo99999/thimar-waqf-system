@@ -1,9 +1,49 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useUi } from '../contexts/UiContext';
-import { saveFeedback, generateId, getInstitutions } from '../services/db';
-import { SystemFeedback } from '../types';
-import { MessageSquarePlus, Send, Image, X, CheckCircle } from 'lucide-react';
+import { saveFeedback, generateId, getInstitutions, getFeedback, markRepliesSeen } from '../services/db';
+import { SystemFeedback, FeedbackStatus } from '../types';
+import { MessageSquarePlus, Send, Image, X, CheckCircle, Reply } from 'lucide-react';
+
+const STATUS_UI: Record<FeedbackStatus, { label: string; cls: string }> = {
+  new: { label: 'مُستلمة', cls: 'bg-sky-100 text-sky-800' },
+  in_progress: { label: 'قيد المعالجة', cls: 'bg-amber-100 text-amber-800' },
+  done: { label: 'تمت المعالجة', cls: 'bg-emerald-100 text-emerald-800' },
+};
+
+// ملاحظات المؤسسة السابقة وردود الوزارة عليها
+const MyFeedback: React.FC<{ items: SystemFeedback[]; newReplies: Set<string> }> = ({ items, newReplies }) => {
+  if (items.length === 0) return null;
+  return (
+    <section className="mt-8" aria-labelledby="my-feedback-title">
+      <h2 id="my-feedback-title" className="text-lg font-bold text-navy-900 mb-3">ملاحظاتي السابقة ({items.length})</h2>
+      <div className="space-y-3">
+        {items.map(f => {
+          const st = STATUS_UI[f.status || 'new'];
+          return (
+            <div key={f.id} className={`bg-white rounded-xl border p-4 ${newReplies.has(f.id) ? 'border-teal-400 ring-2 ring-teal-100' : 'border-gray-200'}`}>
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
+                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{f.page}</span>
+                <span className="text-xs text-gray-400">{new Date(f.submitted_at).toLocaleDateString('ar-OM')}</span>
+                {newReplies.has(f.id) && <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-teal-600 text-white">رد جديد</span>}
+              </div>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{f.text}</p>
+              {f.admin_reply && (
+                <div className="mt-3 rounded-lg bg-teal-50 border border-teal-200 p-3">
+                  <p className="flex items-center gap-1.5 text-xs font-bold text-teal-800 mb-1">
+                    <Reply size={14} aria-hidden="true" /> رد الوزارة{f.replied_at ? ` · ${new Date(f.replied_at).toLocaleDateString('ar-OM')}` : ''}
+                  </p>
+                  <p className="text-sm text-gray-800 whitespace-pre-wrap">{f.admin_reply}</p>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+};
 
 const PAGES = [
   'بيانات المؤسسة',
@@ -23,6 +63,18 @@ const Feedback: React.FC = () => {
   const [image, setImage] = useState<string | undefined>(undefined);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [mine, setMine] = useState<SystemFeedback[]>([]);
+  const [newReplies, setNewReplies] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const list = [...getFeedback()].filter(f => !currentWaqfId || f.institution_id === currentWaqfId)
+      .sort((a, b) => (b.submitted_at || '').localeCompare(a.submitted_at || ''));
+    setMine(list);
+    // نعلّم الردود الجديدة كمقروءة، ونبقي تمييزها ظاهراً في هذه الزيارة
+    setNewReplies(new Set(list.filter(f => f.admin_reply && !f.reply_seen).map(f => f.id)));
+    markRepliesSeen();
+    window.dispatchEvent(new Event('feedbackRepliesSeen'));
+  }, [currentWaqfId, submitted]);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -81,6 +133,7 @@ const Feedback: React.FC = () => {
         >
           إرسال ملاحظة أخرى
         </button>
+        <div className="w-full max-w-2xl text-right"><MyFeedback items={mine} newReplies={newReplies} /></div>
       </div>
     );
   }
@@ -159,6 +212,7 @@ const Feedback: React.FC = () => {
           )}
         </button>
       </form>
+      <MyFeedback items={mine} newReplies={newReplies} />
     </div>
   );
 };

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Building2, ClipboardCheck, Scale, FileBarChart, Menu, X, ShieldAlert, Settings, LogOut, Lock, Send, Inbox, CheckCircle, RotateCcw, Landmark, RefreshCw, AlertTriangle, MessageSquarePlus, MessageSquare, KeyRound, Shield, Home, ListChecks } from 'lucide-react';
-import { getSession, getSettings, getInstitutionProgress, getPendingEvaluationsCount, getEvaluationByInstAndYear, saveEvaluation, getUnreadFeedbackCount, getInstitutions } from '../services/db';
+import { getSession, getSettings, getInstitutionProgress, getPendingEvaluationsCount, getEvaluationByInstAndYear, saveEvaluation, getUnreadFeedbackCount, getUnseenRepliesCount, getInstitutions } from '../services/db';
 import { CURRENT_YEAR } from '../constants';
 import { useUi } from '../contexts/UiContext';
 import { ChangePasswordModal, CredentialsModal } from './AccountModals';
@@ -199,6 +199,13 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const progress = getInstitutionProgress(currentWaqfId);
   const pendingCount = role === 'admin' ? getPendingEvaluationsCount() : 0;
   const unreadFeedback = role === 'admin' ? getUnreadFeedbackCount() : 0;
+  const [, setRepliesTick] = useState(0);
+  useEffect(() => {
+    const onSeen = () => setRepliesTick(t => t + 1);
+    window.addEventListener('feedbackRepliesSeen', onSeen);
+    return () => window.removeEventListener('feedbackRepliesSeen', onSeen);
+  }, []);
+  const unseenReplies = role === 'user' ? getUnseenRepliesCount() : 0;
 
   useEffect(() => {
     // Apply Dark Mode
@@ -242,7 +249,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { to: '/reports', icon: FileBarChart, label: 'النتائج والتقارير', roles: ['admin'] },
     { to: '/settings', icon: Settings, label: 'إعدادات النظام', roles: ['admin'] },
     { to: '/review-submit', icon: Send, label: 'المراجعة والإرسال', roles: ['user'] },
-    { to: '/feedback', icon: MessageSquarePlus, label: 'إبداء ملاحظة على النظام', roles: ['user'] },
+    { to: '/feedback', icon: MessageSquarePlus, label: 'إبداء ملاحظة على النظام', roles: ['user'], badge: unseenReplies },
   ];
 
   // Filter based on current role
