@@ -28,7 +28,7 @@ export const buildDemoData = (institutions: Institution[], indicators: Indicator
       indicators.forEach((indicator, index) => {
         responses.push({
           id: `demo-response-${evaluationId}-${indicator.id}`, evaluation_id: evaluationId,
-          indicator_id: indicator.id, score: 2 + ((seed + index + year - 2024) % 4),
+          indicator_id: indicator.id, score: Math.max(1, Math.min(5, [3, 4, 3, 4, 5, 2, 3, 4][seed % 8] + ((index + year) % 3) - 1)),
           updated_at: date,
         });
       });
@@ -43,14 +43,20 @@ export const buildDemoData = (institutions: Institution[], indicators: Indicator
         admin_general_expenses: Math.round(expenses * 0.14), surplus_deficit: revenues - expenses,
         operating_cash_flow: revenues - expenses, investing_cash_flow: -25000,
         financing_cash_flow: 10000, cash_end_period: 75000 + seed % 100000,
+        beneficiary_distributions: Math.round(expenses * (0.35 + (seed % 20) / 100)),
+        unaudited: seed % 7 === 0,
         status: 'Approved', flags: [],
       });
     }
-    risks.push({
-      id: `demo-risk-${institution.id}`, institution_id: institution.id,
-      risk_title: 'مخاطر تشغيلية توضيحية', category: 'Operational',
-      probability: 3 + seed % 3, impact: 4 + seed % 2,
-      mitigation_plan: 'خطة متابعة توضيحية', status: 'Open',
+    const CATS = ['Operational', 'Financial', 'Strategic', 'Legal', 'Shariah'] as const;
+    [0, 1, 2].forEach(k => {
+      const h = (seed >>> (k * 4)) + k * 7;
+      risks.push({
+        id: `demo-risk-${institution.id}-${k}`, institution_id: institution.id,
+        risk_title: 'مخاطر توضيحية', category: CATS[(seed + k) % CATS.length],
+        probability: 1 + (h % 5), impact: 1 + ((h >>> 2) % 5),
+        mitigation_plan: 'خطة متابعة توضيحية', status: 'Open',
+      });
     });
     return demoInstitution;
   });
