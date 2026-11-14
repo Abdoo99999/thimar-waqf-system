@@ -16,11 +16,12 @@ const Login: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      if (loginCode.trim().toLowerCase() === 'admin') {
-        await loginAdmin(loginCode.trim(), password);
+      // رموز المؤسسات WQ + أرقام؛ وأي اسم مستخدم آخر لحسابات الوزارة (المدير والمعتمِد والمطّلع)
+      if (!/^wq\d+$/i.test(loginCode.trim())) {
+        const s = await loginAdmin(loginCode.trim(), password);
         setWaqfContext('');
-        login('مدير النظام', 'admin');
-        showToast('مرحباً بك، مدير النظام', 'success');
+        login(s.name || 'مدير النظام', (s.role || 'admin') as any);
+        showToast(`مرحباً بك، ${s.name || 'مدير النظام'}`, 'success');
         navigate('/dashboard', { replace: true });
       } else {
         const session = await loginInstitution(loginCode, password);
@@ -81,7 +82,7 @@ const Login: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">رمز الدخول</label>
+            <label className="block text-sm font-bold text-gray-700 mb-2">رمز الدخول <span className="font-normal text-gray-500">(أو اسم المستخدم لموظفي الوزارة)</span></label>
             <div className="relative">
               <KeyRound className="absolute top-3 right-3 text-gray-400" size={20} />
               <input

@@ -1,17 +1,17 @@
 
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Building2, ClipboardCheck, Scale, FileBarChart, Menu, X, ShieldAlert, Settings, LogOut, Lock, Send, Inbox, CheckCircle, RotateCcw, Landmark, RefreshCw, AlertTriangle, MessageSquarePlus, MessageSquare, KeyRound, Shield, Home, ListChecks } from 'lucide-react';
+import { LayoutDashboard, Building2, ClipboardCheck, Scale, FileBarChart, Menu, X, ShieldAlert, Settings, LogOut, Lock, Send, Inbox, CheckCircle, RotateCcw, Landmark, RefreshCw, AlertTriangle, MessageSquarePlus, MessageSquare, KeyRound, Shield, Home, ListChecks, Users } from 'lucide-react';
 import { getSession, getSettings, getInstitutionProgress, getPendingEvaluationsCount, getEvaluationByInstAndYear, saveEvaluation, getUnreadFeedbackCount, getUnseenRepliesCount, getInstitutions } from '../services/db';
 import { CURRENT_YEAR } from '../constants';
 import { computeBenchmark, nextReportRef } from '../utils/report';
-import { useUi } from '../contexts/UiContext';
+import { useUi, isMinistryRole, canApproveRole, ROLE_LABEL } from '../contexts/UiContext';
 import { ChangePasswordModal, CredentialsModal } from './AccountModals';
 
 // Helper to determine if a route is locked
 // STRICT SEQUENTIAL LOGIC applied here to match App.tsx
 const isRouteLocked = (path: string, role: string | null, progress: any) => {
-    if (role === 'admin') return false; // Admin can access everything
+    if (role !== 'user') return false; // مستخدمو الوزارة لا تُقفل عليهم الصفحات
     
     // --- 1. POST-SUBMISSION LOCKDOWN (The requested feature) ---
     // If the workflow is Submitted or Approved, lock all INPUT pages.
@@ -70,7 +70,9 @@ const SidebarItem = ({ to, icon: Icon, label, active, locked, badge }: any) => (
   </Link>
 );
 
-const AdminActionBar = ({ waqfId, showToast }: any) => {
+const AdminActionBar = ({ waqfId, showToast, role }: any) => {
+    const session = getSession();
+    const isApprover = role === 'approver';
     const [ev, setEv] = useState<any>(null);
     const [showReturnModal, setShowReturnModal] = useState(false);
     const [showApproveModal, setShowApproveModal] = useState(false);
@@ -93,7 +95,8 @@ const AdminActionBar = ({ waqfId, showToast }: any) => {
         const updatedEv = {
             ...ev, workflow_status: 'approved', approved_at: new Date().toISOString(),
             report_ref: ev.report_ref || nextReportRef(ev.cycle_year), report_benchmark: computeBenchmark(ev.cycle_year),
-            ministry_notes: notes.trim(), approver_name: approverName.trim(), approver_title: approverTitle.trim(),
+            ministry_notes: notes.trim(),
+            approver_name: isApprover ? (session.name || '') : approverName.trim(), approver_title: isApprover ? (session.title || '') : approverTitle.trim(),
         };
         saveEvaluation(updatedEv);
         showToast('تم اعتماد الأداء المؤسسي بنجاح', 'success');
@@ -178,6 +181,9 @@ const AdminActionBar = ({ waqfId, showToast }: any) => {
                                 <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={4}
                                     className="w-full rounded-lg border border-gray-300 p-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-green-500" />
                             </label>
+                            {isApprover ? (
+                                <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-900">يُسجَّل الاعتماد باسمك: <strong>{session.name}</strong>{session.title ? ` – ${session.title}` : ''}</p>
+                            ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <label className="flex flex-col gap-1 text-sm font-bold text-gray-700">
                                     اسم المعتمِد (اختياري)
@@ -190,6 +196,7 @@ const AdminActionBar = ({ waqfId, showToast }: any) => {
                                         className="w-full rounded-lg border border-gray-300 p-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-green-500" />
                                 </label>
                             </div>
+                            )}
                         </div>
                         <div className="flex gap-3 justify-end">
                             <button type="button" onClick={() => setShowApproveModal(false)} className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-lg font-bold transition-colors">إلغاء</button>
@@ -223,7 +230,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Get Progress for User
   // Force re-calculation on location change to keep locks updated
   const progress = getInstitutionProgress(currentWaqfId);
-  const pendingCount = role === 'admin' ? getPendingEvaluationsCount() : 0;
+  const pendingCount = isMinistryRole(role) ? getPendingEvaluationsCount() : 0;
   const unreadFeedback = role === 'admin' ? getUnreadFeedbackCount() : 0;
   const [, setRepliesTick] = useState(0);
   useEffect(() => {
@@ -262,17 +269,18 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Define All Routes with Roles
   const allNavItems = [
     { to: '/home', icon: Home, label: 'الرئيسية', roles: ['user'] },
-    { to: '/dashboard', icon: LayoutDashboard, label: 'الرئيسية (القيادة)', roles: ['admin'] },
-    { to: '/tracking', icon: ListChecks, label: 'متابعة المؤسسات', roles: ['admin'] },
-    { to: '/approval-requests', icon: Inbox, label: 'طلبات الاعتماد', roles: ['admin'], badge: pendingCount },
+    { to: '/dashboard', icon: LayoutDashboard, label: 'الرئيسية (القيادة)', roles: ['admin', 'approver', 'viewer'] },
+    { to: '/tracking', icon: ListChecks, label: 'متابعة المؤسسات', roles: ['admin', 'approver', 'viewer'] },
+    { to: '/approval-requests', icon: Inbox, label: 'طلبات الاعتماد', roles: ['admin', 'approver', 'viewer'], badge: pendingCount },
     { to: '/system-feedback', icon: MessageSquare, label: 'ملاحظات النظام', roles: ['admin'], badge: unreadFeedback },
     { to: '/accounts', icon: KeyRound, label: 'حسابات المؤسسات', roles: ['admin'] },
+    { to: '/staff', icon: Users, label: 'مستخدمو الوزارة', roles: ['admin'] },
     { to: '/institutions', icon: Building2, label: role === 'admin' ? 'بيانات المؤسسات' : 'بيانات المؤسسة', roles: ['admin', 'user'] },
     { to: '/financial-reports', icon: Landmark, label: 'القوائم المالية', roles: ['admin', 'user'] },
     { to: '/evaluation', icon: ClipboardCheck, label: 'الأداء المؤسسي', roles: ['admin', 'user'] },
     { to: '/compliance', icon: Scale, label: 'الامتثال والمخاطر', roles: ['admin', 'user'] },
     { to: '/improvements', icon: ShieldAlert, label: 'خطة التحسين', roles: ['admin', 'user'] },
-    { to: '/reports', icon: FileBarChart, label: 'النتائج والتقارير', roles: ['admin'] },
+    { to: '/reports', icon: FileBarChart, label: 'النتائج والتقارير', roles: ['admin', 'approver', 'viewer'] },
     { to: '/settings', icon: Settings, label: 'إعدادات النظام', roles: ['admin'] },
     { to: '/review-submit', icon: Send, label: 'المراجعة والإرسال', roles: ['user'] },
     { to: '/reports', icon: FileBarChart, label: 'تقرير التقييم', roles: ['user'] },
@@ -281,7 +289,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   // Filter based on current role
   const navItems = allNavItems.filter(item => role && item.roles.includes(role));
-  const selectedInstitution = role === 'admin' && currentWaqfId ? getInstitutions().find(i => i.id === currentWaqfId) : null;
+  const selectedInstitution = isMinistryRole(role) && currentWaqfId ? getInstitutions().find(i => i.id === currentWaqfId) : null;
   const renderNavItem = (item: typeof allNavItems[number]) => (
     <SidebarItem key={item.to} {...item} active={location.pathname === item.to}
       locked={item.to === '/home' ? false : isRouteLocked(item.to, role, progress)} />
@@ -314,13 +322,28 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
         {/* User Role Badge */}
         <div className="px-4 mt-4">
-            <div className={`p-2 rounded-lg text-center text-xs font-bold border transform hover:scale-105 transition-transform duration-300 ${role === 'admin' ? 'bg-navy-800 border-navy-700 text-gold-400' : 'bg-teal-900/50 border-teal-800 text-teal-400'}`}>
-                {role === 'admin' ? 'صلاحية: مدير النظام' : 'صلاحية: مؤسسة وقفية'}
+            <div className={`p-2 rounded-lg text-center text-xs font-bold border transform hover:scale-105 transition-transform duration-300 ${isMinistryRole(role) ? 'bg-navy-800 border-navy-700 text-gold-400' : 'bg-teal-900/50 border-teal-800 text-teal-400'}`}>
+                صلاحية: {role ? ROLE_LABEL[role] : ''}
             </div>
         </div>
         
         <nav className="p-4 pb-6 space-y-2 flex-1 min-h-0 overflow-y-auto overscroll-contain mt-2 scrollbar-thin scrollbar-thumb-navy-700">
-          {role === 'admin' ? (
+          {(role === 'approver' || role === 'viewer') ? (
+            <>
+              <p className="px-4 pt-2 text-xs font-bold text-gray-400">المتابعة</p>
+              {['/dashboard', '/tracking', '/approval-requests'].map(path => renderNavItem(navItems.find(item => item.to === path)!))}
+              {currentWaqfId ? (
+                <>
+                  <p className="px-4 pt-5 text-xs font-bold text-gray-400">المؤسسة المختارة</p>
+                  <div className="mx-2 flex items-start justify-between gap-2 rounded-lg border border-navy-700 bg-navy-800 p-3">
+                    <span className="min-w-0 break-words text-xs font-bold text-white">{selectedInstitution?.name || 'المؤسسة المختارة'}</span>
+                    <Link to="/tracking" className="shrink-0 text-xs font-bold text-teal-400 hover:underline">تغيير</Link>
+                  </div>
+                  {renderNavItem(navItems.find(item => item.to === '/reports')!)}
+                </>
+              ) : <p className="px-4 py-5 text-xs leading-relaxed text-gray-400">اختر مؤسسة من متابعة المؤسسات</p>}
+            </>
+          ) : role === 'admin' ? (
             <>
               <p className="px-4 pt-2 text-xs font-bold text-gray-400">الإدارة</p>
               {['/dashboard', '/tracking', '/approval-requests', '/institutions'].map(path => renderNavItem(navItems.find(item => item.to === path)!))}
@@ -335,7 +358,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 </>
               ) : <p className="px-4 py-5 text-xs leading-relaxed text-gray-400">اختر مؤسسة من متابعة المؤسسات</p>}
               <p className="px-4 pt-5 text-xs font-bold text-gray-400">النظام</p>
-              {['/system-feedback', '/accounts', '/settings'].map(path => renderNavItem(navItems.find(item => item.to === path)!))}
+              {['/system-feedback', '/accounts', '/staff', '/settings'].map(path => renderNavItem(navItems.find(item => item.to === path)!))}
             </>
           ) : navItems.map(renderNavItem)}
           <button
@@ -385,16 +408,16 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
                 <div className="hidden md:block text-left">
                    <p className="text-sm font-bold text-navy-900 dark:text-white">أهلاً، {user}</p>
-                   <p className="text-xs text-gold-600 dark:text-gold-400">{role === 'admin' ? 'مدير النظام' : 'مستخدم مؤسسة'}</p>
+                   <p className="text-xs text-gold-600 dark:text-gold-400">{role === 'user' ? 'مستخدم مؤسسة' : (role === 'admin' ? 'مدير النظام' : `${role ? ROLE_LABEL[role] : ''}${getSession().title ? ' · ' + getSession().title : ''}`)}</p>
                 </div>
-                <div className={`w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center font-bold text-white shadow-md shrink-0 ${role === 'admin' ? 'bg-navy-800' : 'bg-teal-600'}`}>
-                    {role === 'admin' ? <Shield size={19} /> : (user?.trim().split(/\s+/).find(word => word !== 'مؤسسة' && word !== 'مدير')?.charAt(0) || user?.charAt(0))?.toUpperCase()}
+                <div className={`w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center font-bold text-white shadow-md shrink-0 ${isMinistryRole(role) ? 'bg-navy-800' : 'bg-teal-600'}`}>
+                    {isMinistryRole(role) ? <Shield size={19} /> : (user?.trim().split(/\s+/).find(word => word !== 'مؤسسة' && word !== 'مدير')?.charAt(0) || user?.charAt(0))?.toUpperCase()}
                 </div>
             </div>
         </header>
 
         {/* ADMIN ACTION BAR (CONDITIONAL) */}
-        {role === 'admin' && currentWaqfId && <AdminActionBar waqfId={currentWaqfId} showToast={showToast} />}
+        {canApproveRole(role) && currentWaqfId && <AdminActionBar waqfId={currentWaqfId} showToast={showToast} role={role} />}
 
         {/* Page Content */}
         <main className="flex-1 overflow-y-auto p-4 lg:p-8 relative dark:text-gray-100">

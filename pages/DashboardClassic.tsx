@@ -78,7 +78,7 @@ const TopListItem = ({ rank, name, score, maxScore = 5 }: any) => {
     );
 };
 
-const DashboardClassic: React.FC<{ onSwitchLayout?: () => void }> = ({ onSwitchLayout }) => {
+const DashboardClassic: React.FC<{ onSwitchLayout?: () => void; readOnly?: boolean }> = ({ onSwitchLayout, readOnly }) => {
   const { currentWaqfId, setWaqfContext, currentYear, setYearContext } = useUi();
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
@@ -336,10 +336,10 @@ const DashboardClassic: React.FC<{ onSwitchLayout?: () => void }> = ({ onSwitchL
               <h2 className="text-3xl font-extrabold text-navy-900 dark:text-white tracking-tight">لوحة القيادة الاستراتيجية</h2>
               {demoMode && <span className="rounded-full border border-amber-300 bg-amber-100 px-3 py-1 text-sm font-bold text-amber-800">بيانات توضيحية – ليست حقيقية</span>}
             </div>
-            <label className="mt-3 inline-flex cursor-pointer items-center gap-2 text-sm font-bold text-navy-800">
+            {!readOnly && <label className="mt-3 inline-flex cursor-pointer items-center gap-2 text-sm font-bold text-navy-800">
               <input type="checkbox" role="switch" checked={demoMode} onChange={toggleDemoMode} className="h-5 w-5 accent-amber-600" />
               وضع العرض التوضيحي
-            </label>
+            </label>}
             {onSwitchLayout && (
               <button type="button" onClick={onSwitchLayout} className="mt-3 mr-4 inline-flex items-center text-sm font-bold text-teal-700 underline underline-offset-4 hover:text-navy-900">
                 عرض الشكل الجديد

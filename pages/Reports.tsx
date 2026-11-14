@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Printer, Download, Clock, FileText, ShieldAlert } from 'lucide-react';
-import { useUi } from '../contexts/UiContext';
+import { useUi, isMinistryRole } from '../contexts/UiContext';
 import { getEvaluations } from '../services/db';
 import { CURRENT_YEAR } from '../constants';
 import { buildReport, formatDate } from '../utils/report';
@@ -11,7 +11,7 @@ declare const html2pdf: any;
 
 const Reports: React.FC = () => {
   const { currentWaqfId, role } = useUi();
-  const isAdmin = role === 'admin';
+  const isAdmin = isMinistryRole(role); // المدير والمعتمِد والمطّلع يرون المسودة قبل الاعتماد
   const ev = currentWaqfId ? getEvaluations(CURRENT_YEAR).find(e => e.institution_id === currentWaqfId) : undefined;
   const approved = ev?.workflow_status === 'approved';
   // المدير يرى مسودة التقرير قبل الاعتماد (بالمتوسط الحالي)، والمؤسسة لا ترى إلا المعتمد

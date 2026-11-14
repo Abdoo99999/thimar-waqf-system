@@ -37,7 +37,7 @@ const TAG = { bad: 'bg-red-50 text-red-700', warn: 'bg-amber-50 text-amber-800',
 const LEVEL_RANGE: Record<string, string> = { 'ممتاز': '90% فأعلى', 'جيد جداً': '75–89%', 'جيد': '60–74%', 'مقبول': '50–59%', 'ضعيف': 'أقل من 50%' };
 const share = (n: number, t: number) => `${t ? Math.round((n / t) * 100) : 0}%`;
 
-const DashboardInner: React.FC<{ onSwitchLayout: () => void }> = ({ onSwitchLayout }) => {
+const DashboardInner: React.FC<{ onSwitchLayout?: () => void }> = ({ onSwitchLayout }) => {
   const tip = useTip();
   const { currentWaqfId, setWaqfContext, currentYear, setYearContext } = useUi();
   const navigate = useNavigate();
@@ -90,12 +90,12 @@ const DashboardInner: React.FC<{ onSwitchLayout: () => void }> = ({ onSwitchLayo
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
           <h1 className="m-0 text-[28px] font-extrabold">لوحة القيادة</h1>
-          <div className="no-print flex flex-wrap items-center gap-4 text-sm">
+          {onSwitchLayout && <div className="no-print flex flex-wrap items-center gap-4 text-sm">
             <label className="flex cursor-pointer items-center gap-2 font-bold text-amber-800">
               <input type="checkbox" role="switch" checked={demoMode} onChange={toggleDemo} className="h-5 w-5 accent-amber-600" /> وضع العرض التوضيحي
             </label>
             <button type="button" onClick={onSwitchLayout} className="font-bold text-slate-600 underline underline-offset-4 hover:text-navy-900">العودة للشكل السابق</button>
-          </div>
+          </div>}
         </div>
         <div className="no-print flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1 text-xs font-bold text-slate-600">دورة التقييم
@@ -364,7 +364,7 @@ const DashboardInner: React.FC<{ onSwitchLayout: () => void }> = ({ onSwitchLayo
   );
 };
 
-const DashboardModern: React.FC<{ onSwitchLayout: () => void }> = props => (
+const DashboardModern: React.FC<{ onSwitchLayout?: () => void }> = props => (
   <TipProvider><DashboardInner {...props} /></TipProvider>
 );
 

@@ -134,6 +134,11 @@ app.use('/api', (req, res, next) => {
 
 const requireAuth = (req, res, next) => req.session ? next() : res.status(401).json({ error: 'غير مسجل الدخول' });
 const requireAdmin = (req, res, next) => req.session?.role === 'admin' ? next() : res.status(403).json({ error: 'صلاحية المدير مطلوبة' });
+// مستخدمو الوزارة: المعتمِد (يعتمد ويُرجع) والمطّلع (عرض فقط)
+const STAFF_ROLES = ['approver', 'viewer'];
+const isStaff = (s) => !!s && STAFF_ROLES.includes(s.role);
+const seesAll = (s) => !!s && (s.role === 'admin' || isStaff(s));
+const STAFF_ROLE_LABEL = { approver: 'معتمِد', viewer: 'مطّلع' };
 
 const wrap = (fn) => (req, res) => fn(req, res).catch(e => {
   console.error(`${req.method} ${req.path}:`, e.message);
@@ -169,13 +174,19 @@ app.post('/api/auth/admin-login', wrap(async (req, res) => {
   const key = `${clientIp(req)}|admin:${username}`;
   if (isLocked(key)) return res.status(429).json({ error: `محاولات كثيرة. حاول بعد ${LOCK_MINUTES} دقيقة.` });
   const { rows } = await pool.query('SELECT * FROM app_admins WHERE username = $1', [username]);
-  if (!rows[0] || !verifyPassword(password, rows[0].password_hash)) {
+  if (rows[0] && verifyPassword(password, rows[0].password_hash)) {
+    attempts.delete(key);
+    setSession(req, res, { role: 'admin', username, name: 'مدير النظام', v: rows[0].session_version });
+    return res.json({ role: 'admin', name: 'مدير النظام' });
+  }
+  const st = (await pool.query('SELECT * FROM app_staff WHERE username = $1 AND active = true', [username])).rows[0];
+  if (!st || !verifyPassword(password, st.password_hash)) {
     recordFail(key);
     return res.status(401).json({ error: 'بيانات الدخول غير صحيحة' });
   }
   attempts.delete(key);
-  setSession(req, res, { role: 'admin', username, name: 'مدير النظام', v: rows[0].session_version });
-  res.json({ role: 'admin', name: 'مدير النظام' });
+  setSession(req, res, { role: st.role, username, name: st.display_name, title: st.title || '', v: st.session_version });
+  res.json({ role: st.role, name: st.display_name, title: st.title || '', must_change_password: st.must_change });
 }));
 
 app.post('/api/auth/logout', (req, res) => { clearSession(res); res.json({ ok: true }); });
@@ -185,6 +196,10 @@ const sessionStillValid = async (s) => {
   if (s.role === 'admin') {
     const { rows } = await pool.query('SELECT session_version FROM app_admins WHERE username = $1', [s.username]);
     return rows[0] && rows[0].session_version === s.v;
+  }
+  if (isStaff(s)) {
+    const { rows } = await pool.query('SELECT session_version, role, active FROM app_staff WHERE username = $1', [s.username]);
+    return rows[0] && rows[0].active && rows[0].role === s.role && rows[0].session_version === s.v;
   }
   const { rows } = await pool.query('SELECT session_version FROM app_accounts WHERE institution_id = $1', [s.institution_id]);
   return rows[0] && rows[0].session_version === s.v;
@@ -204,7 +219,11 @@ app.get('/api/auth/me', wrap(async (req, res) => {
     const { rows } = await pool.query('SELECT must_change FROM app_accounts WHERE institution_id = $1', [s.institution_id]);
     must = !!rows[0]?.must_change;
   }
-  res.json({ authenticated: true, role: s.role, name: s.name, institution_id: s.institution_id || null, must_change_password: must });
+  if (isStaff(s)) {
+    const { rows } = await pool.query('SELECT must_change FROM app_staff WHERE username = $1', [s.username]);
+    must = !!rows[0]?.must_change;
+  }
+  res.json({ authenticated: true, role: s.role, name: s.name, title: s.title || '', institution_id: s.institution_id || null, must_change_password: must });
 }));
 
 app.post('/api/auth/change-password', requireAuth, wrap(async (req, res) => {
@@ -212,14 +231,14 @@ app.post('/api/auth/change-password', requireAuth, wrap(async (req, res) => {
   const next = String(req.body?.next || '');
   if (next.length < 8) return res.status(400).json({ error: 'كلمة المرور الجديدة يجب ألا تقل عن 8 أحرف' });
   const s = req.session;
-  const table = s.role === 'admin' ? 'app_admins' : 'app_accounts';
-  const where = s.role === 'admin' ? 'username' : 'institution_id';
-  const whereVal = s.role === 'admin' ? s.username : s.institution_id;
+  const table = s.role === 'admin' ? 'app_admins' : isStaff(s) ? 'app_staff' : 'app_accounts';
+  const where = s.role === 'user' ? 'institution_id' : 'username';
+  const whereVal = s.role === 'user' ? s.institution_id : s.username;
   const { rows } = await pool.query(`SELECT password_hash, session_version FROM ${table} WHERE ${where} = $1`, [whereVal]);
   if (!rows[0] || !verifyPassword(current, rows[0].password_hash)) return res.status(400).json({ error: 'كلمة المرور الحالية غير صحيحة' });
   if (current === next) return res.status(400).json({ error: 'اختر كلمة مرور مختلفة عن الحالية' });
   const v = rows[0].session_version + 1;
-  await pool.query(`UPDATE ${table} SET password_hash = $1, session_version = $2${s.role === 'user' ? ', must_change = false' : ''} WHERE ${where} = $3`, [hashPassword(next), v, whereVal]);
+  await pool.query(`UPDATE ${table} SET password_hash = $1, session_version = $2${s.role !== 'admin' ? ', must_change = false' : ''} WHERE ${where} = $3`, [hashPassword(next), v, whereVal]);
   setSession(req, res, { ...s, v, exp: undefined });
   res.json({ ok: true });
 }));
@@ -229,7 +248,7 @@ app.get('/api/data', requireAuth, wrap(async (req, res) => {
   const s = req.session;
   const out = {};
   for (const c of Object.keys(COLLECTIONS)) out[c] = [];
-  const { rows } = s.role === 'admin'
+  const { rows } = seesAll(s)
     ? await pool.query('SELECT collection, data FROM app_records ORDER BY created_at')
     : await pool.query(
         `SELECT collection, data FROM app_records
@@ -298,6 +317,19 @@ const checkUserWrite = async (s, collection, id, item, existing) => {
   return null;
 };
 
+// المعتمِد: يعتمد التقييم المرفوع أو يُرجعه مع ملاحظاته فقط، ولا يعدّل غير ذلك
+const APPROVAL_FIELDS = ['workflow_status', 'approved_at', 'returned_at', 'report_ref', 'report_benchmark', 'ministry_notes', 'approver_name', 'approver_title', 'admin_feedback'];
+const checkStaffWrite = (s, collection, item, existing) => {
+  if (s.role !== 'approver') return 'صلاحيتك للاطلاع فقط';
+  if (collection !== 'waqf_evaluations' || !existing) return 'صلاحية المعتمِد تقتصر على اعتماد التقييمات';
+  if (existing.data?.workflow_status !== 'submitted') return 'يمكن اعتماد أو إرجاع التقييمات المرفوعة فقط';
+  if (!['approved', 'returned'].includes(item.workflow_status)) return 'إجراء غير مسموح';
+  const keys = new Set([...Object.keys(item), ...Object.keys(existing.data || {})]);
+  const changed = [...keys].filter(k => !APPROVAL_FIELDS.includes(k) && JSON.stringify(item[k]) !== JSON.stringify(existing.data?.[k]));
+  if (changed.length) return 'لا يمكن للمعتمِد تعديل بيانات التقييم';
+  return null;
+};
+
 const getExisting = async (collection, id) => {
   const { rows } = await pool.query('SELECT institution_id, data FROM app_records WHERE collection = $1 AND id = $2', [collection, id]);
   return rows[0] || null;
@@ -313,7 +345,12 @@ app.put('/api/records/:collection/:id', requireAuth, wrap(async (req, res) => {
   const s = req.session;
   const existing = await getExisting(collection, id);
 
-  if (s.role !== 'admin') {
+  if (isStaff(s)) {
+    const err = checkStaffWrite(s, collection, item, existing);
+    if (err) return res.status(403).json({ error: err });
+    // اسم المعتمِد ومسماه من حسابه وليس مما يرسله المتصفح
+    if (item.workflow_status === 'approved') { item.approver_name = s.name; item.approver_title = s.title || ''; }
+  } else if (s.role !== 'admin') {
     const err = await checkUserWrite(s, collection, id, item, existing);
     if (err) return res.status(403).json({ error: err });
   }
@@ -337,6 +374,7 @@ app.delete('/api/records/:collection/:id', requireAuth, wrap(async (req, res) =>
   if (!COLLECTIONS[collection]) return res.status(404).json({ error: 'مجموعة غير معروفة' });
   const s = req.session;
   const existing = await getExisting(collection, id);
+  if (isStaff(s)) return res.status(403).json({ error: 'غير مسموح' });
   if (!existing) return res.json({ ok: true });
   if (s.role !== 'admin') {
     if (collection === 'waqf_institutions' || COLLECTIONS[collection].global) return res.status(403).json({ error: 'غير مسموح' });
@@ -353,6 +391,56 @@ app.delete('/api/records/:collection/:id', requireAuth, wrap(async (req, res) =>
     await pool.query('DELETE FROM app_accounts WHERE institution_id = $1', [id]);
     await pool.query('DELETE FROM app_files WHERE institution_id = $1', [id]);
   }
+  res.json({ ok: true });
+}));
+
+// ─── مستخدمو الوزارة (يديرهم المدير) ───────────────────────────────────────
+const cleanStaff = (b, partial = false) => {
+  const out = {};
+  if (!partial || b.display_name !== undefined) { out.display_name = String(b.display_name || '').trim().slice(0, 120); if (!out.display_name) return { error: 'الاسم مطلوب' }; }
+  if (!partial || b.title !== undefined) out.title = String(b.title || '').trim().slice(0, 160);
+  if (!partial || b.role !== undefined) { out.role = String(b.role || ''); if (!STAFF_ROLES.includes(out.role)) return { error: 'نوع الصلاحية غير صحيح' }; }
+  if (b.active !== undefined) out.active = !!b.active;
+  return { out };
+};
+app.get('/api/admin/staff', requireAdmin, wrap(async (req, res) => {
+  const { rows } = await pool.query('SELECT username, display_name, title, role, active, must_change, created_at FROM app_staff ORDER BY created_at');
+  res.json(rows);
+}));
+app.post('/api/admin/staff', requireAdmin, wrap(async (req, res) => {
+  const username = String(req.body?.username || '').trim().toLowerCase();
+  if (!/^[a-z0-9._-]{3,40}$/.test(username)) return res.status(400).json({ error: 'اسم المستخدم من 3 إلى 40 حرفاً إنجليزياً أو أرقاماً (بدون مسافات)' });
+  if (/^wq\d+$/.test(username)) return res.status(400).json({ error: 'اسم المستخدم لا يبدأ بـ WQ (مخصص للمؤسسات)' });
+  const exists = await pool.query('SELECT 1 FROM app_admins WHERE username = $1 UNION SELECT 1 FROM app_staff WHERE username = $1', [username]);
+  if (exists.rows.length) return res.status(400).json({ error: 'اسم المستخدم مستخدم مسبقاً' });
+  const { out, error } = cleanStaff(req.body || {});
+  if (error) return res.status(400).json({ error });
+  const password = String(req.body?.password || '').trim();
+  if (password.length < 6) return res.status(400).json({ error: 'كلمة المرور 6 أحرف على الأقل' });
+  await pool.query('INSERT INTO app_staff (username, password_hash, role, display_name, title, active, must_change) VALUES ($1, $2, $3, $4, $5, true, $6)',
+    [username, hashPassword(password), out.role, out.display_name, out.title, !!req.body?.must_change]);
+  res.json({ ok: true });
+}));
+app.put('/api/admin/staff/:username', requireAdmin, wrap(async (req, res) => {
+  const { out, error } = cleanStaff(req.body || {}, true);
+  if (error) return res.status(400).json({ error });
+  const sets = [], vals = [];
+  Object.entries(out).forEach(([k, v]) => { vals.push(v); sets.push(`${k} = $${vals.length}`); });
+  const password = req.body?.password !== undefined ? String(req.body.password).trim() : null;
+  if (password !== null) {
+    if (password.length < 6) return res.status(400).json({ error: 'كلمة المرور 6 أحرف على الأقل' });
+    vals.push(hashPassword(password)); sets.push(`password_hash = $${vals.length}`);
+    sets.push('must_change = false');
+  }
+  if (!sets.length) return res.json({ ok: true });
+  sets.push('session_version = session_version + 1');
+  vals.push(req.params.username);
+  const { rowCount } = await pool.query(`UPDATE app_staff SET ${sets.join(', ')} WHERE username = $${vals.length}`, vals);
+  if (!rowCount) return res.status(404).json({ error: 'المستخدم غير موجود' });
+  res.json({ ok: true });
+}));
+app.delete('/api/admin/staff/:username', requireAdmin, wrap(async (req, res) => {
+  await pool.query('DELETE FROM app_staff WHERE username = $1', [req.params.username]);
   res.json({ ok: true });
 }));
 
@@ -484,11 +572,12 @@ const MIME_BY_EXT = {
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
   txt: 'text/plain; charset=utf-8', csv: 'text/csv; charset=utf-8',
 };
-const canAccessFile = (s, f) => s.role === 'admin' || f.institution_id === s.institution_id;
+const canAccessFile = (s, f) => seesAll(s) || f.institution_id === s.institution_id;
 
 app.post('/api/files', requireAuth, wrap(async (req, res) => {
   const s = req.session;
   const name = String(req.body?.name || '').slice(0, 255);
+  if (isStaff(s)) return res.status(403).json({ error: 'غير مسموح' });
   const institutionId = s.role === 'admin' ? String(req.body?.institution_id || '') : s.institution_id;
   if (!institutionId) return res.status(400).json({ error: 'المؤسسة غير محددة' });
   const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
@@ -560,6 +649,17 @@ async function initDb() {
       must_change BOOLEAN NOT NULL DEFAULT true,
       session_version INTEGER NOT NULL DEFAULT 1,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS app_staff (
+      username TEXT PRIMARY KEY,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      active BOOLEAN NOT NULL DEFAULT true,
+      must_change BOOLEAN NOT NULL DEFAULT false,
+      session_version INTEGER NOT NULL DEFAULT 1,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
     CREATE TABLE IF NOT EXISTS app_admins (
       username TEXT PRIMARY KEY,

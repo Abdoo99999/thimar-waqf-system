@@ -2,7 +2,7 @@
 import React, { Suspense, lazy } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
-import { UiProvider, useUi } from './contexts/UiContext';
+import { UiProvider, useUi, isMinistryRole } from './contexts/UiContext';
 import { getInstitutionProgress, dbReady } from './services/db';
 import { Lock, Loader2 } from 'lucide-react';
 import Login from './pages/Login';
@@ -14,6 +14,7 @@ const CompliancePage = lazy(() => import('./pages/Compliance'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Improvements = lazy(() => import('./pages/Improvements'));
 const Settings = lazy(() => import('./pages/Settings'));
+const StaffUsers = lazy(() => import('./pages/StaffUsers'));
 const ReviewSubmit = lazy(() => import('./pages/ReviewSubmit'));
 const ApprovalRequests = lazy(() => import('./pages/ApprovalRequests'));
 const FinancialReports = lazy(() => import('./pages/FinancialReports'));
@@ -30,11 +31,17 @@ const PageLoader = () => (
   </div>
 );
 
-const ProtectedRoute: React.FC<{ children: React.ReactNode; requiredRole?: 'admin' | 'user' }> = ({ children, requiredRole }) => {
+// بدون requiredRole: المدير والمؤسسة فقط (صفحات الإدخال)؛ ministry: المدير والمعتمِد والمطّلع؛ any: الجميع
+const ProtectedRoute: React.FC<{ children: React.ReactNode; requiredRole?: 'admin' | 'user' | 'ministry' | 'any' }> = ({ children, requiredRole }) => {
   const { isAuthenticated, role } = useUi();
   if (!isAuthenticated) return <Navigate to="/" replace />;
-  if (requiredRole === 'admin' && role !== 'admin') return <Navigate to="/institutions" replace />;
-  if (requiredRole === 'user' && role !== 'user') return <Navigate to="/" replace />;
+  const staff = role === 'approver' || role === 'viewer';
+  const allowed = requiredRole === 'any' ? true
+    : requiredRole === 'ministry' ? isMinistryRole(role)
+    : requiredRole === 'admin' ? role === 'admin'
+    : requiredRole === 'user' ? role === 'user'
+    : !staff;
+  if (!allowed) return <Navigate to={staff ? '/dashboard' : role === 'admin' ? '/institutions' : '/'} replace />;
   return <>{children}</>;
 };
 
@@ -90,7 +97,7 @@ const SequentialRoute: React.FC<{
 // المدير المسجل يبقى داخل لوحة التحكم عند فتح الرابط الرئيسي.
 const HomeRedirect: React.FC = () => {
   const { isAuthenticated, role } = useUi();
-  if (isAuthenticated && role === 'admin') return <Navigate to="/dashboard" replace />;
+  if (isAuthenticated && isMinistryRole(role)) return <Navigate to="/dashboard" replace />;
   return <Login />;
 };
 
@@ -98,13 +105,14 @@ const AppRoutes: React.FC = () => {
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
-        <Route path="/dashboard" element={<ProtectedRoute requiredRole="admin"><Dashboard /></ProtectedRoute>} />
+        <Route path="/dashboard" element={<ProtectedRoute requiredRole="ministry"><Dashboard /></ProtectedRoute>} />
         <Route path="/home" element={<ProtectedRoute requiredRole="user"><InstitutionHome /></ProtectedRoute>} />
-        <Route path="/tracking" element={<ProtectedRoute requiredRole="admin"><Tracking /></ProtectedRoute>} />
+        <Route path="/tracking" element={<ProtectedRoute requiredRole="ministry"><Tracking /></ProtectedRoute>} />
         <Route path="/accounts" element={<ProtectedRoute requiredRole="admin"><Accounts /></ProtectedRoute>} />
-        <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+        <Route path="/staff" element={<ProtectedRoute requiredRole="admin"><StaffUsers /></ProtectedRoute>} />
+        <Route path="/reports" element={<ProtectedRoute requiredRole="any"><Reports /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute requiredRole="admin"><Settings /></ProtectedRoute>} />
-        <Route path="/approval-requests" element={<ProtectedRoute requiredRole="admin"><ApprovalRequests /></ProtectedRoute>} />
+        <Route path="/approval-requests" element={<ProtectedRoute requiredRole="ministry"><ApprovalRequests /></ProtectedRoute>} />
         <Route path="/system-feedback" element={<ProtectedRoute requiredRole="admin"><SystemFeedbackPage /></ProtectedRoute>} />
         <Route path="/institutions" element={<ProtectedRoute><Institutions /></ProtectedRoute>} />
         <Route path="/feedback" element={<ProtectedRoute requiredRole="user"><Feedback /></ProtectedRoute>} />

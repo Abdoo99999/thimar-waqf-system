@@ -26,8 +26,9 @@ const DEFAULT_SETTINGS = { darkMode: false, orgName: 'وزارة الأوقاف 
 
 export interface SessionInfo {
   authenticated: boolean;
-  role?: 'admin' | 'user';
+  role?: 'admin' | 'user' | 'approver' | 'viewer';
   name?: string;
+  title?: string;
   institution_id?: string | null;
   must_change_password?: boolean;
 }
@@ -270,6 +271,13 @@ export const saveSettings = (s: any) => {
 // ─── حسابات المؤسسات (للمدير فقط) ───────────────────────────────────────────
 export interface AccountSummary { institution_id: string; login_code: string; must_change: boolean; updated_at: string; }
 export const fetchAccounts = (): Promise<AccountSummary[]> => request('GET', '/admin/accounts');
+// ─── مستخدمو الوزارة (المعتمِد والمطّلع) ─────────────────────────────────────
+export interface StaffUser { username: string; display_name: string; title: string; role: 'approver' | 'viewer'; active: boolean; must_change: boolean; created_at: string }
+export const fetchStaff = (): Promise<StaffUser[]> => request('GET', '/admin/staff');
+export const createStaff = (u: { username: string; display_name: string; title: string; role: string; password: string }) => request('POST', '/admin/staff', u);
+export const updateStaff = (username: string, patch: Partial<StaffUser> & { password?: string }) => request('PUT', `/admin/staff/${encodeURIComponent(username)}`, patch);
+export const deleteStaff = (username: string) => request('DELETE', `/admin/staff/${encodeURIComponent(username)}`);
+
 export const setAccountPassword = (institutionId: string, password: string): Promise<{ ok: true }> =>
   request('POST', `/admin/accounts/${encodeURIComponent(institutionId)}/set-password`, { password });
 export const resetAccountPassword = (institutionId: string): Promise<InstitutionAccount> =>

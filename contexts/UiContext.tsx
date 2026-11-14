@@ -10,7 +10,11 @@ interface Toast {
     type: 'success' | 'error' | 'info';
 }
 
-export type UserRole = 'admin' | 'user';
+export type UserRole = 'admin' | 'user' | 'approver' | 'viewer';
+// مستخدمو الوزارة: يرون كل المؤسسات (المدير والمعتمِد والمطّلع)
+export const isMinistryRole = (r?: string | null) => r === 'admin' || r === 'approver' || r === 'viewer';
+export const canApproveRole = (r?: string | null) => r === 'admin' || r === 'approver';
+export const ROLE_LABEL: Record<UserRole, string> = { admin: 'مدير النظام', approver: 'معتمِد', viewer: 'مطّلع', user: 'مؤسسة وقفية' };
 
 interface UiContextType {
     showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
@@ -41,7 +45,7 @@ export const UiProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
     const [currentWaqfId, setCurrentWaqfId] = useState<string | null>(() => {
         if (initial.role === 'user') return initial.institution_id || null;
-        if (initial.role === 'admin') { try { return localStorage.getItem('currentWaqfContext'); } catch { return null; } }
+        if (isMinistryRole(initial.role)) { try { return localStorage.getItem('currentWaqfContext'); } catch { return null; } }
         return null;
     });
 

@@ -46,7 +46,7 @@ const SUMMARY_TILES: { key: SummaryStatus | 'all'; label: string; icon: React.Re
 
 const Tracking: React.FC = () => {
   const navigate = useNavigate();
-  const { setWaqfContext, showToast } = useUi();
+  const { setWaqfContext, showToast, role } = useUi();
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -93,7 +93,7 @@ const Tracking: React.FC = () => {
 
   const openInstitution = (id: string) => {
     setWaqfContext(id);
-    navigate('/institutions');
+    navigate(role === 'admin' ? '/institutions' : '/reports');
   };
 
   const exportExcel = () => {
