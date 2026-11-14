@@ -3,6 +3,7 @@ import type { Institution, Evaluation, Response, FinancialRecord, RiskRegisterIt
 import { summarizeCompliance, getAutoChecks, riskLevel, RISK_CATEGORY_LABEL } from './compliance';
 import { getInstitutionProgressSummary } from './institutionJourney';
 import { scoreLevel } from './report';
+import { CURRENT_YEAR } from '../constants';
 
 export interface DashSource {
   institutions: Institution[];
@@ -76,7 +77,16 @@ export const buildDashboard = (src: DashSource, year: number, instId: string | n
   });
   const categories = Object.entries(cats).map(([label, v]) => ({ label, ...v })).sort((a, b) => b.n - a.n);
 
-  const brackets = BRACKETS.map(b => ({ ...b, n: insts.filter(i => (Number(i.capital_omr) || 0) >= b.min && (Number(i.capital_omr) || 0) < b.max).length }));
+  const brackets = BRACKETS.map(b => {
+    const inB = insts.filter(i => (Number(i.capital_omr) || 0) >= b.min && (Number(i.capital_omr) || 0) < b.max);
+    return { ...b, n: inB.length, cap: inB.reduce((a, i) => a + (Number(i.capital_omr) || 0), 0) };
+  });
+
+  // المؤسسات الأعلى مخاطر (للمقارنة بجانب المصفوفة)
+  const riskInst = insts.map(i => {
+    const rs = openRisks.filter(r => r.institution_id === i.id);
+    return { id: i.id, name: i.name, total: rs.length, high: rs.filter(r => riskLevel(r.probability * r.impact) === 'high').length };
+  }).filter(x => x.total > 0).sort((a, b) => b.high - a.high || b.total - a.total).slice(0, 5);
 
   const govMap: Record<string, { n: number; cap: number }> = {};
   insts.forEach(i => { const g = i.governorate || 'غير محدد'; (govMap[g] ||= { n: 0, cap: 0 }); govMap[g].n++; govMap[g].cap += Number(i.capital_omr) || 0; });
@@ -91,8 +101,10 @@ export const buildDashboard = (src: DashSource, year: number, instId: string | n
       const h = hash(inst.id) % 20;
       return h < 8 ? 'approved' : h < 12 ? 'submitted' : h < 13 ? 'returned' : h < 18 ? 'in-progress' : 'not-started';
     }
-    const s = getInstitutionProgressSummary(inst).summaryStatus;
-    return s as Stage;
+    if (year === CURRENT_YEAR) return getInstitutionProgressSummary(inst).summaryStatus as Stage;
+    const ev = evalOf(inst.id);
+    if (!ev) return 'not-started';
+    return (ev.workflow_status === 'draft' || !ev.workflow_status ? 'in-progress' : ev.workflow_status) as Stage;
   };
   const stageByInst = new Map(insts.map(i => [i.id, stageOf(i)] as const));
   const stages = STAGES.map(s => ({ ...s, n: [...stageByInst.values()].filter(v => v === s.key).length }));
@@ -113,12 +125,13 @@ export const buildDashboard = (src: DashSource, year: number, instId: string | n
       return;
     }
     const ev = evalOf(inst.id);
-    const sub = ev?.submission_date ? new Date(ev.submission_date).getTime() : NaN;
-    if (!isNaN(sub)) datesSub.push(sub);
-    if (st === 'approved') {
-      const app = ev?.approved_at ? new Date(ev.approved_at).getTime() : sub;
-      if (!isNaN(app)) datesApp.push(app);
-    }
+    // كل مؤسسة مرفوعة تُحسب في المنحنى حتى لو نقص تاريخها، ليطابق آخر المنحنى أرقام الحالة الحالية
+    const t = (d?: string) => (d ? new Date(d).getTime() : NaN);
+    let sub = t(ev?.submission_date);
+    if (isNaN(sub)) sub = t(ev?.approved_at);
+    if (isNaN(sub)) sub = Math.min(today.getTime(), end.getTime());
+    datesSub.push(sub);
+    if (st === 'approved') { const app = t(ev?.approved_at); datesApp.push(isNaN(app) ? sub : app); }
   });
   const created = yearEvals.map(e => new Date(e.created_at || e.cycle_date || '').getTime()).filter(t => !isNaN(t));
   // البداية: قبل أول رفع بثلاثة أسابيع (أو بداية إنشاء التقييمات إن لم يُرفع شيء)، وبحد أدنى 4 أسابيع قبل الموعد
@@ -126,10 +139,13 @@ export const buildDashboard = (src: DashSource, year: number, instId: string | n
   start = Math.min(start, end.getTime() - 28 * DAY);
   const weeks = Math.max(4, Math.ceil((end.getTime() - start) / (7 * DAY)));
   const nowWeek = Math.min(weeks, Math.max(0, (today.getTime() - start) / (7 * DAY)));
+  const fmtDay = (t: number) => new Date(t).toLocaleDateString('ar-OM-u-nu-latn', { day: 'numeric', month: 'long' });
   const cum = (dates: number[]) => {
-    const pts: { w: number; v: number }[] = [];
-    for (let w = 0; w <= Math.floor(nowWeek); w++) pts.push({ w, v: dates.filter(d => d <= start + w * 7 * DAY).length });
-    if (nowWeek % 1 > 0.05) pts.push({ w: nowWeek, v: dates.filter(d => d <= today.getTime()).length });
+    const pts: { w: number; v: number; date: string }[] = [];
+    for (let w = 0; w <= Math.floor(nowWeek); w++) { const t = start + w * 7 * DAY; pts.push({ w, v: dates.filter(d => d <= t).length, date: fmtDay(t) }); }
+    // النقطة الأخيرة = اليوم، وتشمل كل المرفوع حتى الآن
+    pts.push({ w: nowWeek, v: dates.length, date: 'اليوم' });
+    if (pts.length > 1 && nowWeek - pts[pts.length - 2].w < 0.05) pts.splice(pts.length - 2, 1);
     return pts;
   };
   const curve = {
@@ -142,7 +158,7 @@ export const buildDashboard = (src: DashSource, year: number, instId: string | n
   };
 
   // ── 3. النتائج (المرفوعة والمعتمدة فقط) ──
-  const counted = yearEvals.filter(e => src.demo || e.workflow_status === 'submitted' || e.workflow_status === 'approved');
+  const counted = yearEvals.filter(e => { const st = stageByInst.get(e.institution_id); return st === 'submitted' || st === 'approved'; });
   const respByEval = new Map<string, Response[]>();
   src.responses.forEach(r => { if (r.score > 0) { const a = respByEval.get(r.evaluation_id) || []; a.push(r); respByEval.set(r.evaluation_id, a); } });
   const indById = new Map(src.indicators.map(i => [i.id, i] as const));
@@ -211,7 +227,7 @@ export const buildDashboard = (src: DashSource, year: number, instId: string | n
 
   return {
     count: insts.length, capital, publicCount, privateCount, omani, nonOmani, employees, omanization,
-    risksOpen: openRisks.length, riskLv, matrix, categories, brackets, governorates,
+    risksOpen: openRisks.length, riskLv, matrix, categories, brackets, governorates, riskInst,
     stages, submittedCount, curve, daysLeft,
     counted: scores.length, overall, overallLevel: scoreLevel(overall), levels, axes, compliance,
     finance, attention,
