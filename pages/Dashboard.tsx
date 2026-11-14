@@ -339,7 +339,6 @@ const Dashboard: React.FC = () => {
               <input type="checkbox" role="switch" checked={demoMode} onChange={toggleDemoMode} className="h-5 w-5 accent-amber-600" />
               وضع العرض التوضيحي
             </label>
-            <p className="text-gray-500 dark:text-gray-400 mt-2 text-lg">نظرة شاملة على الأصول البشرية، المالية، ومستويات الأداء</p>
          </div>
          
          <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
@@ -372,7 +371,7 @@ const Dashboard: React.FC = () => {
                         className="w-full p-3 pl-10 border border-gray-300 rounded-xl shadow-sm focus:ring-2 focus:ring-navy-800 outline-none appearance-none bg-white font-bold"
                         value={currentWaqfId || ''} onChange={(e) => setWaqfContext(e.target.value)}
                      >
-                         <option value="">جميع المؤسسات (نظرة عامة)</option>
+                         <option value="">جميع المؤسسات</option>
                          {institutions.map(inst => <option key={inst.id} value={inst.id}>{inst.name}</option>)}
                      </select>
                      <div className="absolute left-3 top-3.5 pointer-events-none text-gray-500"><Building size={18} /></div>

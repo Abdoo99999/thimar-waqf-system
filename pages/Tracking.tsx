@@ -133,9 +133,7 @@ const Tracking: React.FC = () => {
     <main className="mx-auto max-w-7xl space-y-6 pb-10" dir="rtl">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[.18em] text-[#728c84]">لوحة الإدارة / متابعة الأداء</p>
           <h1 className="mt-2 text-2xl font-extrabold tracking-tight text-[#193b3e] sm:text-3xl">متابعة المؤسسات</h1>
-          <p className="mt-2 text-sm text-slate-500">نظرة موحدة على تقدم الملفات وحالة طلبات التقييم.</p>
         </div>
         <button
           onClick={exportExcel}

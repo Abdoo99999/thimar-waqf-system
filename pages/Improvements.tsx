@@ -24,11 +24,15 @@ type ColumnType = 'ToDo' | 'Doing' | 'Done';
 const Improvements: React.FC = () => {
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const { currentWaqfId, showToast } = useUi();
-  const [institutionName, setInstitutionName] = useState('');
+  const institutionName = getInstitutions().find(i => i.id === currentWaqfId)?.name || '';
   
   // Drag and Drop State
   const [draggedItem, setDraggedItem] = useState<ImprovementItem | null>(null);
   
+  // بعد رفع التقييم: تحديث التنفيذ فقط (الحالة والأدلة)، بدون إضافة أو حذف بنود
+  const currentEval = currentWaqfId ? getEvaluations().find(e => e.institution_id === currentWaqfId && e.cycle_year === CURRENT_YEAR) : undefined;
+  const planLocked = currentEval?.workflow_status === 'submitted' || currentEval?.workflow_status === 'approved';
+
   // Kanban State
   const [columns, setColumns] = useState<{ [key in ColumnType]: ImprovementItem[] }>({
       ToDo: [],
@@ -64,7 +68,6 @@ const Improvements: React.FC = () => {
     if (!currentWaqfId) return;
 
     const inst = getInstitutions().find(i => i.id === currentWaqfId);
-    setInstitutionName(inst?.name || '');
 
     const ev = getEvaluations().find(e => e.institution_id === currentWaqfId && e.cycle_year === CURRENT_YEAR);
     const evalId = ev?.id || `TEMP_EVAL_${currentWaqfId}`;
@@ -164,12 +167,12 @@ const Improvements: React.FC = () => {
   useEffect(() => {
     if (currentWaqfId) {
         const items = loadImprovements();
-        // Only auto-sync if list is completely empty
-        if (items.length === 0) {
+        // Only auto-sync if list is completely empty (and the plan is still editable)
+        if (items.length === 0 && !planLocked) {
             syncWithSources(false);
         }
     }
-  }, [currentWaqfId, loadImprovements, syncWithSources]);
+  }, [currentWaqfId, loadImprovements, syncWithSources, planLocked]);
 
   // --- Drag and Drop Handlers ---
   const handleDragStart = (e: React.DragEvent, item: ImprovementItem) => {
@@ -302,17 +305,6 @@ const Improvements: React.FC = () => {
       }
   };
   
-  const handleManualSave = () => {
-      // Re-save all items (redundant but gives user peace of mind)
-      const allItems = [...columns.ToDo, ...columns.Doing, ...columns.Done];
-      if (allItems.length > 0) {
-          allItems.forEach(saveImprovement);
-          showToast('تم حفظ كافة التغييرات بنجاح', 'success');
-      } else {
-          showToast('لا توجد مهام للحفظ', 'info');
-      }
-  };
-
   const handleDownloadPDF = () => {
       const element = document.getElementById('kanban-board');
       if (!element) return;
@@ -343,6 +335,7 @@ const Improvements: React.FC = () => {
         </h2>
         {currentWaqfId && (
             <div className="flex gap-2">
+ {!planLocked && (
                 <button 
                     onClick={() => syncWithSources(true)} 
                     className="bg-white border border-teal-600 text-teal-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-teal-50 shadow-sm transition-all duration-300 hover:scale-105 active:scale-95 font-bold text-sm"
@@ -350,12 +343,7 @@ const Improvements: React.FC = () => {
                 >
                     <RefreshCw size={18} /> تحديث من المصادر
                 </button>
-                <button 
-                    onClick={handleManualSave} 
-                    className="bg-teal-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-teal-700 shadow-md transition-all duration-300 hover:scale-105 active:scale-95 font-bold text-sm"
-                >
-                    <Save size={18} /> حفظ
-                </button>
+                )}
                 <button 
                     onClick={handleDownloadPDF} 
                     className="bg-navy-800 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-navy-900 shadow-md transition-all duration-300 hover:scale-105 active:scale-95 font-bold text-sm"
@@ -367,7 +355,7 @@ const Improvements: React.FC = () => {
       </div>
 
        {/* Banner */}
-      {currentWaqfId ? (
+      {currentWaqfId ? (<>
           <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl flex items-center justify-between text-blue-900 animate-fadeIn no-print mb-8 hover:shadow-md transition-shadow">
               <div className="flex items-center gap-3">
                   <div className="bg-blue-100 p-2 rounded-lg"><Building size={20} className="text-blue-700"/></div>
@@ -376,8 +364,14 @@ const Improvements: React.FC = () => {
                       <div className="text-lg font-bold">{institutionName}</div>
                   </div>
               </div>
+              <span className="text-xs font-bold text-blue-700 bg-white/70 rounded-full px-3 py-1">يُحفظ تلقائياً</span>
           </div>
-      ) : (
+          {planLocked && (
+              <div className="no-print -mt-4 mb-6 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-900">
+                  التقييم مرفوع للوزارة: يمكنك تحديث حالة تنفيذ البنود وإرفاق أدلة الإنجاز طوال السنة، دون إضافة بنود أو حذفها.
+              </div>
+          )}
+      </>) : (
           <div className="bg-orange-50 border border-orange-200 p-6 rounded-xl text-center no-print">
               <p className="text-orange-800 font-bold mb-2">لم يتم اختيار مؤسسة</p>
               <p className="text-sm text-orange-600">يرجى اختيار مؤسسة لعرض مهام التحسين الخاصة بها.</p>
@@ -401,7 +395,7 @@ const Improvements: React.FC = () => {
                         key={item.id} 
                         item={item} 
                         onMoveForward={() => moveItem(item, 'forward')}
-                        onDelete={() => handleDelete(item.id, 'ToDo')}
+                        onDelete={planLocked ? undefined : () => handleDelete(item.id, 'ToDo')}
                         onDragStart={handleDragStart}
                         badge={getSourceBadge(item.indicator_id)}
                     />
@@ -424,7 +418,7 @@ const Improvements: React.FC = () => {
                         item={item} 
                         onMoveBack={() => moveItem(item, 'backward')}
                         onMoveForward={() => moveItem(item, 'forward')}
-                        onDelete={() => handleDelete(item.id, 'Doing')}
+                        onDelete={planLocked ? undefined : () => handleDelete(item.id, 'Doing')}
                         onDragStart={handleDragStart}
                         badge={getSourceBadge(item.indicator_id)}
                     />
@@ -446,7 +440,7 @@ const Improvements: React.FC = () => {
                         key={item.id} 
                         item={item} 
                         onMoveBack={() => moveItem(item, 'backward')}
-                        onDelete={() => handleDelete(item.id, 'Done')}
+                        onDelete={planLocked ? undefined : () => handleDelete(item.id, 'Done')}
                         onAttachEvidence={handleAttachEvidence}
                         onRemoveEvidence={handleRemoveEvidence}
                         onDragStart={handleDragStart}
@@ -496,12 +490,14 @@ const KanbanCard = ({ item, onMoveBack, onMoveForward, onDelete, onAttachEvidenc
             className={`bg-white dark:bg-gray-700 p-4 rounded-lg shadow-sm border border-gray-100 dark:border-gray-600 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 hover:scale-[1.02] relative group cursor-grab active:cursor-grabbing ${isDone ? 'opacity-90 hover:opacity-100' : ''}`}
         >
             {/* Delete Button (Hidden until hover) */}
+            {onDelete && (
             <button 
-                onClick={onDelete}
-                className="absolute top-2 left-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity no-print hover:scale-110"
+                onClick={onDelete} aria-label="حذف المهمة"
+                className="absolute top-2 left-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity no-print hover:scale-110"
             >
                 <Trash2 size={16} />
             </button>
+            )}
 
             {/* Badge & Drag Handle */}
             <div className="flex justify-between items-start mb-2">

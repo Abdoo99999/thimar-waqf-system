@@ -283,7 +283,17 @@ const checkUserWrite = async (s, collection, id, item, existing) => {
   }
   if (def.owner === 'evaluation') {
     const { rows } = await pool.query("SELECT data->>'workflow_status' AS ws FROM app_records WHERE collection = 'waqf_evaluations' AND id = $1", [item.evaluation_id]);
-    if (['submitted', 'approved'].includes(rows[0]?.ws)) return 'التقييم مرفوع للاعتماد ولا يمكن تعديله';
+    if (['submitted', 'approved'].includes(rows[0]?.ws)) {
+      // خطة التحسين تبقى مفتوحة طوال السنة لتحديث التنفيذ فقط (الحالة والملاحظات ودليل الإنجاز)
+      if (collection === 'waqf_improvements' && existing) {
+        const EXEC_FIELDS = ['status', 'notes', 'evidence_doc'];
+        const keys = new Set([...Object.keys(item), ...Object.keys(existing.data || {})]);
+        const changed = [...keys].filter(k => !EXEC_FIELDS.includes(k) && JSON.stringify(item[k]) !== JSON.stringify(existing.data?.[k]));
+        if (changed.length === 0) return null;
+        return 'بنود الخطة معتمدة بعد الرفع؛ يمكن تحديث حالة التنفيذ والأدلة فقط';
+      }
+      return 'التقييم مرفوع للاعتماد ولا يمكن تعديله';
+    }
   }
   return null;
 };
@@ -332,6 +342,10 @@ app.delete('/api/records/:collection/:id', requireAuth, wrap(async (req, res) =>
     if (collection === 'waqf_institutions' || COLLECTIONS[collection].global) return res.status(403).json({ error: 'غير مسموح' });
     if (existing.institution_id !== s.institution_id) return res.status(403).json({ error: 'لا يمكنك حذف بيانات مؤسسة أخرى' });
     if (collection === 'waqf_evaluations') return res.status(403).json({ error: 'غير مسموح' });
+    if (COLLECTIONS[collection].owner === 'evaluation') {
+      const { rows } = await pool.query("SELECT data->>'workflow_status' AS ws FROM app_records WHERE collection = 'waqf_evaluations' AND id = $1", [existing.data?.evaluation_id]);
+      if (['submitted', 'approved'].includes(rows[0]?.ws)) return res.status(403).json({ error: 'التقييم مرفوع للاعتماد ولا يمكن الحذف' });
+    }
   }
   await pool.query('DELETE FROM app_records WHERE collection = $1 AND id = $2', [collection, id]);
   if (collection === 'waqf_institutions') {

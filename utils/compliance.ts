@@ -85,7 +85,9 @@ export const getAutoChecks = (institutionId: string): AutoCheck[] => {
     manager
       ? { key: 'exec', ok: true, title: 'إدارة تنفيذية / مدير معيّن', detail: manager, source: 'بيانات المؤسسة', path: '/institutions' }
       : { key: 'exec', ok: false, title: 'لا يوجد مدير مسجّل للمؤسسة', detail: 'أضف اسم المدير في بيانات المؤسسة', source: 'بيانات المؤسسة', path: '/institutions' },
-    auditor
+    fin?.unaudited
+      ? { key: 'audit', ok: false, warn: true, title: 'القوائم المالية غير مدققة', detail: 'معدّة من الإدارة دون مكتب تدقيق خارجي', source: 'القوائم المالية', path: '/financial-reports' }
+      : auditor
       ? { key: 'audit', ok: true, title: 'مكتب تدقيق خارجي معيّن', detail: auditor, source: 'القوائم المالية', path: '/financial-reports' }
       : { key: 'audit', ok: false, title: 'لم يُسجَّل مكتب تدقيق خارجي', detail: 'أضف اسم المدقق في القوائم المالية', source: 'القوائم المالية', path: '/financial-reports' },
     finDone

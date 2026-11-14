@@ -93,7 +93,7 @@ const InstitutionHome: React.FC = () => {
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-teal-100">
               <Sparkles size={14} /> بوابة تقييم المؤسسات الوقفية · {CURRENT_YEAR}
             </div>
-            <p className="mb-2 text-sm text-teal-100/80">مرحباً بكم في مساحة مؤسستكم</p>
+            <p className="mb-2 text-sm text-teal-100/80">مرحباً بكم</p>
             <h1 className="text-2xl font-extrabold leading-tight tracking-tight sm:text-4xl">{institution.name}</h1>
             <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-white/75">
               <span className="inline-flex items-center gap-2"><Building2 size={16} />{institution.type}</span>

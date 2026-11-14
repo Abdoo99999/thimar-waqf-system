@@ -177,7 +177,7 @@ const Reports: React.FC = () => {
         if (adminRatio > 20) score -= 20;
         if (surplus < 0) score -= 30;
         if (netAssets < 0) score -= 40;
-        if (cashFlow <= 0) score -= 10;
+        if (finRecord.operating_cash_flow !== undefined && finRecord.operating_cash_flow !== null && cashFlow < 0) score -= 10;
 
         financialData = {
             year: finRecord.fiscal_year,
@@ -491,7 +491,7 @@ const Reports: React.FC = () => {
                     <h3 className="text-xl font-bold text-navy-900 mb-2 flex items-center gap-2">
                         <Scale className="text-indigo-600" /> مؤشر الامتثال النظامي
                     </h3>
-                    <p className="text-gray-400 text-sm mb-4">مدى التزام المؤسسة بالمتطلبات التشريعية (6 معايير)</p>
+                    <p className="text-gray-400 text-sm mb-4">مدى التزام المؤسسة بالمتطلبات النظامية</p>
                     
                     <div className="flex items-center gap-6 h-full">
                         {/* Gauge / Donut */}

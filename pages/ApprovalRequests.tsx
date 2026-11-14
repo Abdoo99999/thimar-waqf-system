@@ -48,7 +48,6 @@ const ApprovalRequests: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <div>
           <h2 className="text-xl md:text-2xl font-bold text-navy-900">طلبات الاعتماد الواردة</h2>
-          <p className="text-sm text-gray-500 mt-1">طلبات المؤسسات التي أرسلت تقييمها للمراجعة</p>
         </div>
         <div className="flex items-center gap-3">
           <span className="bg-red-100 text-red-600 px-3 py-1 rounded-full text-sm font-bold whitespace-nowrap">

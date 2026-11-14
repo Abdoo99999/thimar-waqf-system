@@ -112,7 +112,6 @@ const Settings: React.FC = () => {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-6 border-b border-gray-100">
             <h3 className="font-bold text-lg mb-2 text-navy-900">الإعدادات العامة</h3>
-            <p className="text-gray-500 text-sm">تخصيص بيانات النظام الأساسية</p>
         </div>
         <div className="p-6 space-y-4 max-w-2xl">
             <div>
@@ -164,7 +163,6 @@ const Settings: React.FC = () => {
         <div className="p-6 flex flex-col md:flex-row gap-4 items-center justify-between">
             <div className="flex-1">
                 <p className="font-bold text-teal-900 mb-1 flex items-center gap-2"><RefreshCw size={18}/> تحديث البيانات</p>
-                <p className="text-sm text-gray-600">يجلب آخر ما أدخلته المؤسسات من الخادم دون إعادة تحميل الصفحة.</p>
             </div>
             <button type="button" onClick={handleRefresh} className="bg-teal-600 text-white px-6 py-3 rounded-xl hover:bg-teal-700 shadow-md flex items-center gap-2 font-bold whitespace-nowrap">
                 <RefreshCw size={18} /> تحديث الآن

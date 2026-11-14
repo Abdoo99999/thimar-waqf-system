@@ -65,7 +65,6 @@ const SystemFeedbackPage: React.FC = () => {
         </div>
         <div>
           <h1 className="text-2xl font-bold text-navy-900">ملاحظات النظام</h1>
-          <p className="text-gray-500 text-sm">استعرض ملاحظات المؤسسات</p>
         </div>
         {unread > 0 && (
           <span className="bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5">{unread}</span>

@@ -146,7 +146,6 @@ const Feedback: React.FC = () => {
         </div>
         <div>
           <h1 className="text-2xl font-bold text-navy-900">إبداء ملاحظة على النظام</h1>
-          <p className="text-gray-500 text-sm mt-1">ملاحظاتك تساعدنا على تحسين النظام — شكراً لمشاركتنا رأيك</p>
         </div>
       </div>
 

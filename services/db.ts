@@ -211,6 +211,9 @@ export const analyzeFinancialHealth = (record: FinancialRecord) => {
   if (record.total_expenses > 0 && ((record.admin_general_expenses / record.total_expenses) * 100 > 20)) flags.push(`تنبيه: المصاريف الإدارية مرتفعة.`);
   if (record.total_expenses > record.total_revenues) flags.push('تنبيه: عجز تشغيلي.');
   if (record.net_waqf_assets < 0) flags.push('خطر حرج: تآكل رأس المال.');
+  if (record.beneficiary_distributions !== undefined && record.beneficiary_distributions !== null && record.beneficiary_distributions > record.total_expenses && record.total_expenses > 0) {
+    errors.push('المبالغ المصروفة على مصارف الوقف أكبر من إجمالي المصروفات.');
+  }
   return { isValid: errors.length === 0, status: flags.length > 0 ? 'Flagged' : 'Submitted' as const, flags, errors };
 };
 export const saveFinancialRecord = (record: FinancialRecord) => upsert(DB_KEYS.FINANCIALS, record);

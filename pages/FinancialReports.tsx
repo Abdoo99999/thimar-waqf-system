@@ -30,10 +30,7 @@ const FinancialReports: React.FC = () => {
       total_expenses: 0,
       admin_general_expenses: 0,
       surplus_deficit: 0,
-      operating_cash_flow: 0,
-      investing_cash_flow: 0,
-      financing_cash_flow: 0,
-      cash_end_period: 0
+      unaudited: false,
   });
 
   const [pdfFile, setPdfFile] = useState<InstitutionDocument | null>(null);
@@ -69,10 +66,7 @@ const FinancialReports: React.FC = () => {
                   total_expenses: 0,
                   admin_general_expenses: 0,
                   surplus_deficit: 0,
-                  operating_cash_flow: 0,
-                  investing_cash_flow: 0,
-                  financing_cash_flow: 0,
-                  cash_end_period: 0
+                  unaudited: false,
               });
               setPdfFile(null);
               setAnalysisResult(null);
@@ -92,14 +86,6 @@ const FinancialReports: React.FC = () => {
       }
   }, [record.total_revenues, record.total_expenses]);
 
-  // Sync Operating Cash Flow with Surplus (Logical Default)
-  useEffect(() => {
-      if (isLocked) return;
-      // We set operating cash flow to match surplus by default as a starting point
-      const surplus = Number(record.surplus_deficit) || 0;
-      setRecord(prev => ({ ...prev, operating_cash_flow: surplus }));
-  }, [record.surplus_deficit, isLocked]);
-
   // Auto-calculate Net Assets (Assets - Liabilities)
   useEffect(() => {
       const assets = Number(record.total_assets) || 0;
@@ -113,15 +99,18 @@ const FinancialReports: React.FC = () => {
 
   // Auto-calculate Cash End of Period (Sum of Flows)
   useEffect(() => {
-      const op = Number(record.operating_cash_flow) || 0;
-      const inv = Number(record.investing_cash_flow) || 0;
-      const fin = Number(record.financing_cash_flow) || 0;
-      const totalCash = op + inv + fin;
+      const flows = [record.operating_cash_flow, record.investing_cash_flow, record.financing_cash_flow];
+      // التدفقات النقدية اختيارية: لا يُحتسب صافي النقد إلا عند إدخال أحدها
+      const totalCash = flows.some(v => v !== undefined && v !== null && !Number.isNaN(v))
+          ? flows.reduce<number>((t, v) => t + (Number(v) || 0), 0) : undefined;
 
       if (totalCash !== record.cash_end_period) {
           setRecord(prev => ({ ...prev, cash_end_period: totalCash }));
       }
   }, [record.operating_cash_flow, record.investing_cash_flow, record.financing_cash_flow]);
+
+  // الحقول الاختيارية: الحقل الفارغ يُحفظ بلا قيمة بدلاً من صفر
+  const optionalNumber = (v: string) => (v.trim() === '' ? undefined : Number(v));
 
   const handleInputChange = (field: keyof FinancialRecord, value: any) => {
       if (isLocked) return;
@@ -165,6 +154,7 @@ const FinancialReports: React.FC = () => {
           ...record as FinancialRecord,
           id: record.id || generateId(),
           institution_id: currentWaqfId,
+          auditor_name: record.unaudited ? '' : (record.auditor_name || ''),
           audit_report_pdf: pdfFile || undefined,
           submission_date: new Date().toISOString(),
           status: 'Submitted',
@@ -202,12 +192,23 @@ const FinancialReports: React.FC = () => {
                 <h2 className="text-2xl font-bold text-navy-900 flex items-center gap-2">
                     <Landmark className="text-teal-600"/> القوائم المالية والحوكمة ({currentYear})
                 </h2>
-                <p className="text-gray-500 mt-1">إدخال البيانات المالية لـ: <span className="font-bold text-navy-800">{currentInstitutionName}</span></p>
+                <p className="mt-1 font-bold text-navy-800">{currentInstitutionName}</p>
               </div>
               {isLocked && <span className="bg-gray-200 text-gray-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1"><Lock size={12}/> للقراءة فقط</span>}
           </div>
-          <div className="flex gap-4">
-              <div className="min-w-[250px]">
+          <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+              <fieldset className="min-w-0">
+                  <legend className="block text-xs font-bold text-gray-500 mb-1">نوع القوائم</legend>
+                  <div className="flex rounded-lg border border-gray-300 bg-white p-1 text-sm font-bold">
+                      {[{ v: false, l: 'مدققة' }, { v: true, l: 'غير مدققة (معدّة من الإدارة)' }].map(o => (
+                          <label key={String(o.v)} className={`cursor-pointer rounded-md px-3 py-1.5 transition-colors ${!!record.unaudited === o.v ? 'bg-navy-800 text-white' : 'text-gray-600 hover:bg-gray-100'} ${isLocked ? 'cursor-not-allowed opacity-70' : ''}`}>
+                              <input type="radio" name="audit_type" className="sr-only" disabled={isLocked} checked={!!record.unaudited === o.v} onChange={() => handleInputChange('unaudited', o.v)} />
+                              {o.l}
+                          </label>
+                      ))}
+                  </div>
+              </fieldset>
+              {!record.unaudited && <div className="min-w-[250px]">
                   <label className="block text-xs font-bold text-gray-500 mb-1">مكتب التدقيق الخارجي</label>
                   <input 
                     type="text" 
@@ -217,7 +218,7 @@ const FinancialReports: React.FC = () => {
                     value={record.auditor_name}
                     onChange={(e) => handleInputChange('auditor_name', e.target.value)}
                   />
-              </div>
+              </div>}
           </div>
       </div>
 
@@ -311,32 +312,31 @@ const FinancialReports: React.FC = () => {
           <div className="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden hover:shadow-lg transition-shadow">
               <div className="bg-gradient-to-r from-orange-700 to-red-900 p-4 text-white flex justify-between items-center">
                   <h3 className="font-bold flex items-center gap-2"><ArrowRightLeft size={18}/> التدفقات النقدية</h3>
-                  <span className="text-xs bg-white/20 px-2 py-1 rounded">السيولة</span>
+                  <span className="text-xs bg-white/20 px-2 py-1 rounded">اختياري</span>
               </div>
               <div className="p-4 space-y-4">
                   <div>
                       <label className="block text-xs font-bold text-gray-600 mb-1">صافي النقد التشغيلي</label>
                        <input type="number" disabled={isLocked} placeholder="مثال: 35000" className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-orange-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
-                           value={record.operating_cash_flow || ''} onChange={(e) => handleInputChange('operating_cash_flow', Number(e.target.value))} />
-                      <p className="text-[9px] text-gray-400 mt-0.5">يُقترح مطابقته للفائض (قابل للتعديل)</p>
+                           value={record.operating_cash_flow ?? ''} onChange={(e) => handleInputChange('operating_cash_flow', optionalNumber(e.target.value))} />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-xs font-bold text-gray-600 mb-1">الاستثماري</label>
-                         <input type="number" disabled={isLocked} placeholder="مثال: -12000" className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-orange-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
-                            value={record.investing_cash_flow || ''} onChange={(e) => handleInputChange('investing_cash_flow', Number(e.target.value))} />
+                         <input type="number" disabled={isLocked} placeholder="0" className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-orange-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
+                            value={record.investing_cash_flow ?? ''} onChange={(e) => handleInputChange('investing_cash_flow', optionalNumber(e.target.value))} />
                       </div>
                       <div>
                         <label className="block text-xs font-bold text-gray-600 mb-1">التمويلي</label>
-                         <input type="number" disabled={isLocked} placeholder="مثال: 5000" className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-orange-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
-                            value={record.financing_cash_flow || ''} onChange={(e) => handleInputChange('financing_cash_flow', Number(e.target.value))} />
+                         <input type="number" disabled={isLocked} placeholder="0" className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-orange-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
+                            value={record.financing_cash_flow ?? ''} onChange={(e) => handleInputChange('financing_cash_flow', optionalNumber(e.target.value))} />
                       </div>
                   </div>
                   <div className="pt-2 border-t border-gray-100">
                       <label className="block text-xs font-bold text-navy-900 mb-1 flex items-center gap-1"><Banknote size={14}/> صافي النقد (نهاية السنة)</label>
                       <input type="number" readOnly className="w-full p-2 border border-gray-300 rounded-lg font-bold bg-gray-100 text-orange-900 outline-none"
-                          value={record.cash_end_period || 0} />
-                      <p className="text-[10px] text-gray-400 mt-1">يتم الاحتساب تلقائياً: (تشغيلي + استثماري + تمويلي)</p>
+                          value={record.cash_end_period ?? ''} placeholder="—" />
+                      <p className="text-[10px] text-gray-400 mt-1">(تشغيلي + استثماري + تمويلي)</p>
                   </div>
               </div>
           </div>
@@ -360,10 +360,15 @@ const FinancialReports: React.FC = () => {
                       )}
                   </div>
                   
-                  {/* Placeholder for visual balance */}
-                  <div className="pt-2 border-t border-gray-100 text-center text-gray-400 text-xs">
-                      <ShieldCheck size={48} className="mx-auto mb-2 opacity-20" />
-                      <p>مؤشر الالتزام بضوابط الصرف</p>
+                  <div className="pt-3 border-t border-gray-100">
+                       <label htmlFor="beneficiary_distributions" className="block text-xs font-bold text-gray-600 mb-1">المبالغ المصروفة على مصارف الوقف (الموقوف عليهم)</label>
+                       <input id="beneficiary_distributions" type="number" disabled={isLocked} placeholder="مثال: 40000" className="w-full p-2 border border-gray-200 rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-purple-500 outline-none disabled:bg-gray-100 disabled:text-gray-500"
+                          value={record.beneficiary_distributions ?? ''} onChange={(e) => handleInputChange('beneficiary_distributions', optionalNumber(e.target.value))} />
+                      {(record.total_expenses || 0) > 0 && record.beneficiary_distributions !== undefined && (
+                          <div className="mt-2 p-2 rounded text-xs font-bold text-center bg-purple-50 text-purple-800 border border-purple-200">
+                              نسبتها من المصروفات: {((record.beneficiary_distributions || 0) / (record.total_expenses || 1) * 100).toFixed(1)}%
+                          </div>
+                      )}
                   </div>
               </div>
           </div>
@@ -379,7 +384,7 @@ const FinancialReports: React.FC = () => {
           <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
               {/* Left Column: Upload */}
               <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-3">إرفاق تقرير المدقق المالي (PDF)</label>
+                  <label className="block text-sm font-bold text-gray-700 mb-3">{record.unaudited ? 'إرفاق القوائم المالية (اختياري)' : 'إرفاق تقرير المدقق المالي (PDF)'}</label>
                   {pdfFile ? (
                       <div className="flex items-center justify-between bg-blue-50 p-4 rounded-xl border border-blue-200 text-blue-900">
                           <div className="flex items-center gap-3">
@@ -400,7 +405,7 @@ const FinancialReports: React.FC = () => {
                           <input type="file" accept={ATTACHMENT_ACCEPT} className="hidden" onChange={handleFileUpload} disabled={isLocked} />
                       </label>
                   )}
-                  <p className="text-xs text-gray-400 mt-2">يجب أن يكون الملف بصيغة PDF وموقعاً من مكتب التدقيق المعتمد.</p>
+                  <p className="text-xs text-gray-400 mt-2">{record.unaudited ? 'القوائم المعدّة من الإدارة، معتمدة من مجلس الإدارة إن وُجد.' : 'بصيغة PDF وموقّع من مكتب التدقيق.'}</p>
               </div>
 
               {/* Right Column: Declaration */}
@@ -409,7 +414,9 @@ const FinancialReports: React.FC = () => {
                       <ShieldCheck size={18}/> إقرار صحة البيانات
                   </h4>
                   <p className="text-sm text-amber-800 mb-4 leading-relaxed opacity-90">
-                      بصفتي مخولاً عن المؤسسة الوقفية، أقر بأن جميع البيانات المالية المدخلة أعلاه صحيحة ومطابقة تماماً لتقرير المدقق المالي المرفق، وأتحمل المسؤولية القانونية في حال ثبوت خلاف ذلك.
+                      {record.unaudited
+                        ? 'بصفتي مخولاً عن المؤسسة الوقفية، أقر بأن البيانات المالية المدخلة أعلاه صحيحة ومطابقة لسجلات المؤسسة، وأنها معدّة من الإدارة دون تدقيق خارجي.'
+                        : 'بصفتي مخولاً عن المؤسسة الوقفية، أقر بأن البيانات المالية المدخلة أعلاه صحيحة ومطابقة لتقرير المدقق المالي المرفق، وأتحمل المسؤولية في حال ثبوت خلاف ذلك.'}
                   </p>
                   <label className="flex items-center gap-3 cursor-pointer bg-white p-3 rounded-lg border border-amber-200 shadow-sm hover:border-amber-400 transition-colors">
                       <input type="checkbox" disabled={isLocked} className="w-5 h-5 text-navy-900 rounded focus:ring-navy-900 disabled:opacity-50" 

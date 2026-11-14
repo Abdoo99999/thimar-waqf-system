@@ -284,7 +284,6 @@ const CompliancePage: React.FC = () => {
             الامتثال والمخاطر {CURRENT_YEAR}
             {isLocked && <span className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-3 py-1 text-xs font-bold text-slate-700"><Lock size={12} aria-hidden="true" /> للقراءة فقط</span>}
           </h1>
-          <p className="text-[15px] text-slate-600">التزامات نظامية بدليل، وسجل للمخاطر التي تهدد الأصول الوقفية.</p>
         </div>
         <div className="flex gap-2 rounded-xl bg-slate-200 p-1" role="tablist">
           <button type="button" role="tab" aria-selected={tab === 'c'} onClick={() => setTab('c')} className={tabClass(tab === 'c')}>الامتثال</button>

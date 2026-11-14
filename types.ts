@@ -63,7 +63,11 @@ export interface FinancialRecord {
   financing_cash_flow?: number; // صافي النقد من الأنشطة التمويلية
   cash_end_period?: number;     // النقد وما في حكمه في نهاية الفترة
   
+  // التوزيع على مصارف الوقف
+  beneficiary_distributions?: number; // المبالغ المصروفة على مصارف الوقف (الموقوف عليهم)
+
   // Governance & Meta
+  unaudited?: boolean; // قوائم غير مدققة (معدّة من الإدارة)
   audit_report_pdf?: InstitutionDocument;
   status: 'Draft' | 'Submitted' | 'Approved' | 'Flagged';
   flags: string[]; // Array of warning messages
@@ -90,6 +94,9 @@ export interface Evaluation {
   workflow_status?: 'draft' | 'submitted' | 'returned' | 'approved'; 
   submission_date?: string;
   admin_feedback?: string; // Reason for return
+  declaration_accepted_at?: string; // وقت إقرار المؤسسة بصحة البيانات عند الإرسال
+  returned_at?: string;
+  approved_at?: string;
 
   attachments?: InstitutionDocument[];
   created_at: string;
