@@ -113,7 +113,8 @@ const Institutions: React.FC = () => {
       commercial_record_number: formData.commercial_record_number,
       establishment_decision_doc: formData.establishment_decision_doc,
       // الأدمن يضيف المؤسسة كـ"غير مكتملة" — المؤسسة ستكملها بنفسها
-      profile_completed: role === 'admin' ? false : true,
+      // تعديل المدير لا يُلغي اكتمال ملف مؤسسة قائمة
+      profile_completed: role === 'admin' ? formData.profile_completed === true : true,
       documents: formData.documents || [],
       created_at: formData.created_at || new Date().toISOString(),
     };

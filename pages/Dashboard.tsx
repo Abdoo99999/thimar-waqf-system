@@ -104,8 +104,9 @@ const Dashboard: React.FC = () => {
       setFinancials(demo.financials);
     } else {
       setInstitutions(realInstitutions);
-      setEvaluations(getEvaluations() || []);
-      setRisks(getRisks() || []);
+      // مؤشرات الأداء تُحسب من التقييمات المرفوعة أو المعتمدة فقط (المسودات بيانات ناقصة)
+      setEvaluations((getEvaluations() || []).filter(e => e.workflow_status === 'submitted' || e.workflow_status === 'approved'));
+      setRisks((getRisks() || []).filter(r => r.status !== 'Closed'));
       setResponses(getAllResponses() || []);
       setFinancials(getFinancialRecords() || []);
     }

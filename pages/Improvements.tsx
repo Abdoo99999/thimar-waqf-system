@@ -70,7 +70,8 @@ const Improvements: React.FC = () => {
     const inst = getInstitutions().find(i => i.id === currentWaqfId);
 
     const ev = getEvaluations().find(e => e.institution_id === currentWaqfId && e.cycle_year === CURRENT_YEAR);
-    const evalId = ev?.id || `TEMP_EVAL_${currentWaqfId}`;
+    if (!ev) return; // البنود مرتبطة بتقييم السنة؛ لا يُنشأ شيء قبل وجوده
+    const evalId = ev.id;
     
     // Get currently existing items to prevent duplicates
     const existingItems = getImprovements(evalId);
@@ -96,8 +97,8 @@ const Improvements: React.FC = () => {
                         id: generateId(),
                         evaluation_id: evalId,
                         indicator_id: compositeId,
-                        priority: 'Medium',
-                        issue_summary: `ضعف الأداء: ${ind.text.substring(0, 50)}...`,
+                        priority: r.score <= 1 ? 'High' : 'Medium',
+                        issue_summary: `ضعف الأداء: ${ind.text}`,
                         recommended_action: `مرتبط بمؤشر رقم ${globalIndNum}`,
                         owner: 'مدير العمليات',
                         due_date: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
@@ -111,7 +112,7 @@ const Improvements: React.FC = () => {
 
     // 2. Source: High Risks (Score >= 15)
     const risks = getRisks(currentWaqfId);
-    risks.filter(r => (r.probability * r.impact) >= 15).forEach(r => {
+    risks.filter(r => r.status !== 'Closed' && (r.probability * r.impact) >= 15).forEach(r => {
         const compositeId = `RISK-${r.id}`;
         if (!exists(compositeId)) {
             newItems.push({

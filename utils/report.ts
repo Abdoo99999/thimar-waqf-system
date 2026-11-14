@@ -15,6 +15,13 @@ export const scoreLevel = (pct: number) =>
 const asStatement = (text: string, score: number) =>
   `${text.trim().replace(/^(هل|ما)\s+/, '').replace(/[؟?]\s*$/, '')} (${score} من 5)`;
 
+// عنوان البند في التقرير: الإجراء المكتوب، أو وصف المشكلة إذا كان الإجراء نصاً آلياً
+const planTitle = (i: { recommended_action?: string; issue_summary?: string }) => {
+  const action = (i.recommended_action || '').trim();
+  const auto = !action || /^مرتبط بمؤشر رقم/.test(action);
+  return (auto ? (i.issue_summary || action) : action).replace(/\.\.\.$/, '…');
+};
+
 const toPct = (avg: number) => Math.round((avg / 5) * 100);
 
 // درجة تقييم واحد: الإجمالي ولكل محور (نسبة مئوية من 5)
@@ -106,7 +113,7 @@ export const buildReport = (institutionId: string, year: number, liveBenchmark?:
   const PR = { High: 0, Medium: 1, Low: 2 } as const;
   let priorities = [...improvements].filter(i => i.status !== 'Done')
     .sort((a, b) => PR[a.priority] - PR[b.priority])
-    .map(i => i.recommended_action || i.issue_summary).filter(Boolean).slice(0, 3);
+    .map(planTitle).filter(Boolean).slice(0, 3);
   if (priorities.length < 3) {
     const weak = [...scored].filter(x => x.r.score <= 3).sort((a, b) => a.r.score - b.r.score || b.ind.weight - a.ind.weight)
       .map(x => asStatement(x.ind.text, x.r.score)).filter(t => !priorities.includes(t));
@@ -154,7 +161,7 @@ export const buildReport = (institutionId: string, year: number, liveBenchmark?:
     .sort((a, b) => ORDER[a.status] - ORDER[b.status] || PR[a.priority] - PR[b.priority])
     .slice(0, 6)
     .map(i => ({
-      title: i.recommended_action || i.issue_summary, owner: i.owner || '—',
+      title: planTitle(i), owner: i.owner || '—',
       due: i.due_date ? formatDate(i.due_date) : '—', status: ST[i.status][0], tone: ST[i.status][1] as Tone,
     }));
 
