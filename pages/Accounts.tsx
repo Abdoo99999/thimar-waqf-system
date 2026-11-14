@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchAccounts, resetAccountPassword, resetAllPasswords, getInstitutions, resetInstitution, AccountSummary } from '../services/db';
+import { fetchAccounts, resetAccountPassword, setAccountPassword, resetAllPasswords, getInstitutions, resetInstitution, AccountSummary } from '../services/db';
 import { useUi } from '../contexts/UiContext';
 import { Institution } from '../types';
 import { KeyRound, Copy, CheckCircle, RotateCcw, AlertTriangle } from 'lucide-react';
@@ -13,6 +13,20 @@ const Accounts: React.FC = () => {
   const [copied, setCopied] = useState<string | null>(null);
   const [confirmResetId, setConfirmResetId] = useState<string | null>(null);
   const [resetDone, setResetDone] = useState<string | null>(null);
+  const [pwFor, setPwFor] = useState<string | null>(null);
+  const [pwValue, setPwValue] = useState('');
+
+  const handleSetPassword = async () => {
+    if (!pwFor) return;
+    setBusy(true);
+    try {
+      await setAccountPassword(pwFor, pwValue);
+      showToast(`تم تعيين كلمة المرور لـ ${getInstName(pwFor)}`, 'success');
+      setPwFor(null); setPwValue('');
+      setAccounts(await fetchAccounts());
+    } catch (e: any) { showToast(e?.message || 'تعذر تعيين كلمة المرور', 'error'); }
+    finally { setBusy(false); }
+  };
 
   useEffect(() => {
     setInstitutions(getInstitutions());
@@ -104,6 +118,7 @@ const Accounts: React.FC = () => {
                 </div>
                 <div className="mt-3 flex gap-2">
                   <button disabled={busy} onClick={() => handleNewPassword(acc.institution_id)} className="min-h-[44px] flex-1 rounded-lg border border-navy-200 bg-white text-navy-800 text-sm font-bold disabled:opacity-50">كلمة مرور جديدة</button>
+                  <button disabled={busy} onClick={() => { setPwFor(acc.institution_id); setPwValue(''); }} className="min-h-[44px] flex-1 rounded-lg border border-navy-200 bg-white text-navy-800 text-sm font-bold disabled:opacity-50">تعيين كلمة مرور</button>
                   {resetDone === acc.institution_id ? (
                     <span className="min-h-[44px] flex-1 flex items-center justify-center gap-1 text-green-600 text-sm font-bold"><CheckCircle size={14} /> تم الإعادة</span>
                   ) : (
@@ -148,6 +163,9 @@ const Accounts: React.FC = () => {
                         </span>
                         <button disabled={busy} onClick={() => handleNewPassword(acc.institution_id)} className="text-xs font-bold text-navy-800 border border-navy-200 bg-white hover:bg-navy-50 px-2 py-1 rounded-lg disabled:opacity-50">
                           كلمة مرور جديدة
+                        </button>
+                        <button disabled={busy} onClick={() => { setPwFor(acc.institution_id); setPwValue(''); }} className="text-xs font-bold text-navy-800 border border-navy-200 bg-white hover:bg-navy-50 px-2 py-1 rounded-lg disabled:opacity-50">
+                          تعيين كلمة مرور
                         </button>
                       </div>
                     </td>
@@ -216,6 +234,22 @@ const Accounts: React.FC = () => {
             </div>
           )}
       </div>
+      {pwFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="setpw-title">
+          <form onSubmit={e => { e.preventDefault(); handleSetPassword(); }} className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <h3 id="setpw-title" className="text-lg font-extrabold text-navy-900">تعيين كلمة مرور</h3>
+            <p className="mt-1 text-sm text-gray-600">{getInstName(pwFor)} · {accounts.find(a => a.institution_id === pwFor)?.login_code}</p>
+            <label htmlFor="setpw" className="mt-4 block text-sm font-bold text-gray-700">كلمة المرور</label>
+            <input id="setpw" type="text" autoComplete="off" autoFocus value={pwValue} onChange={e => setPwValue(e.target.value)} dir="ltr"
+              className="mt-1 w-full rounded-lg border border-gray-300 p-3 font-mono text-lg outline-none focus:ring-2 focus:ring-teal-500" />
+            <p className="mt-2 text-xs text-gray-500">من 4 أحرف على الأقل. لن يُطلب من المؤسسة تغييرها.</p>
+            <div className="mt-5 flex gap-3">
+              <button type="submit" disabled={busy || pwValue.trim().length < 4} className="min-h-[44px] flex-1 rounded-xl bg-teal-700 font-bold text-white disabled:opacity-50">حفظ</button>
+              <button type="button" onClick={() => setPwFor(null)} className="min-h-[44px] flex-1 rounded-xl bg-gray-100 font-bold text-gray-700">إلغاء</button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 };

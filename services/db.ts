@@ -270,6 +270,8 @@ export const saveSettings = (s: any) => {
 // ─── حسابات المؤسسات (للمدير فقط) ───────────────────────────────────────────
 export interface AccountSummary { institution_id: string; login_code: string; must_change: boolean; updated_at: string; }
 export const fetchAccounts = (): Promise<AccountSummary[]> => request('GET', '/admin/accounts');
+export const setAccountPassword = (institutionId: string, password: string): Promise<{ ok: true }> =>
+  request('POST', `/admin/accounts/${encodeURIComponent(institutionId)}/set-password`, { password });
 export const resetAccountPassword = (institutionId: string): Promise<InstitutionAccount> =>
   request('POST', `/admin/accounts/${encodeURIComponent(institutionId)}/reset-password`);
 export const resetAllPasswords = (): Promise<InstitutionAccount[]> => request('POST', '/admin/accounts/reset-all');

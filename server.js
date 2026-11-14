@@ -385,6 +385,17 @@ app.post('/api/admin/accounts/:institutionId/reset-password', requireAdmin, wrap
   res.json({ institution_id: req.params.institutionId, login_code: rows[0].login_code, password });
 }));
 
+// تعيين كلمة مرور يحددها المدير (للتجربة أو بطلب المؤسسة) دون إلزام بتغييرها
+app.post('/api/admin/accounts/:institutionId/set-password', requireAdmin, wrap(async (req, res) => {
+  const password = String(req.body?.password || '').trim();
+  if (password.length < 4 || password.length > 64) return res.status(400).json({ error: 'كلمة المرور يجب أن تكون من 4 إلى 64 حرفاً' });
+  const { rowCount } = await pool.query(
+    'UPDATE app_accounts SET password_hash = $1, must_change = false, session_version = session_version + 1, updated_at = now() WHERE institution_id = $2',
+    [hashPassword(password), req.params.institutionId]);
+  if (!rowCount) return res.status(404).json({ error: 'الحساب غير موجود' });
+  res.json({ ok: true });
+}));
+
 // إصدار كلمات مرور جديدة لكل المؤسسات (تظهر مرة واحدة فقط)
 app.post('/api/admin/accounts/reset-all', requireAdmin, wrap(async (req, res) => {
   const { rows } = await pool.query('SELECT institution_id, login_code FROM app_accounts ORDER BY login_code');
