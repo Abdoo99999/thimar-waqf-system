@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Building2, ClipboardCheck, Scale, FileBarChart, Menu, X, ShieldAlert, Settings, LogOut, Lock, Send, Inbox, CheckCircle, RotateCcw, Landmark, RefreshCw, AlertTriangle, MessageSquarePlus, MessageSquare, KeyRound, Shield, Home, ListChecks } from 'lucide-react';
 import { getSession, getSettings, getInstitutionProgress, getPendingEvaluationsCount, getEvaluationByInstAndYear, saveEvaluation, getUnreadFeedbackCount, getUnseenRepliesCount, getInstitutions } from '../services/db';
 import { CURRENT_YEAR } from '../constants';
+import { computeBenchmark, nextReportRef } from '../utils/report';
 import { useUi } from '../contexts/UiContext';
 import { ChangePasswordModal, CredentialsModal } from './AccountModals';
 
@@ -74,6 +75,9 @@ const AdminActionBar = ({ waqfId, showToast }: any) => {
     const [showReturnModal, setShowReturnModal] = useState(false);
     const [showApproveModal, setShowApproveModal] = useState(false);
     const [reason, setReason] = useState('');
+    const [notes, setNotes] = useState('');
+    const [approverName, setApproverName] = useState('');
+    const [approverTitle, setApproverTitle] = useState('');
 
     useEffect(() => {
         if(waqfId) {
@@ -85,7 +89,12 @@ const AdminActionBar = ({ waqfId, showToast }: any) => {
     if (!ev || ev.workflow_status !== 'submitted') return null;
 
     const confirmApprove = () => {
-        const updatedEv = {...ev, workflow_status: 'approved'};
+        // يُثبَّت رقم المرجع ومتوسط المؤسسات لحظة الاعتماد
+        const updatedEv = {
+            ...ev, workflow_status: 'approved', approved_at: new Date().toISOString(),
+            report_ref: ev.report_ref || nextReportRef(ev.cycle_year), report_benchmark: computeBenchmark(ev.cycle_year),
+            ministry_notes: notes.trim(), approver_name: approverName.trim(), approver_title: approverTitle.trim(),
+        };
         saveEvaluation(updatedEv);
         showToast('تم اعتماد الأداء المؤسسي بنجاح', 'success');
         setEv(updatedEv); // Updates local state to remove the bar immediately
@@ -97,7 +106,7 @@ const AdminActionBar = ({ waqfId, showToast }: any) => {
             showToast('يرجى كتابة سبب الإعادة', 'error'); 
             return; 
         }
-        const updatedEv = {...ev, workflow_status: 'returned', admin_feedback: reason};
+        const updatedEv = {...ev, workflow_status: 'returned', admin_feedback: reason, returned_at: new Date().toISOString()};
         saveEvaluation(updatedEv);
         showToast('تم إعادة الملف للمؤسسة للتعديل', 'info');
         setEv(updatedEv); // Updates local state to remove the bar immediately
@@ -155,16 +164,33 @@ const AdminActionBar = ({ waqfId, showToast }: any) => {
             {/* Approve Modal */}
             {showApproveModal && (
                 <div className="fixed inset-0 bg-navy-900/70 z-[60] flex items-center justify-center p-4 text-gray-800 backdrop-blur-sm">
-                    <div className="bg-white rounded-xl p-6 w-full max-w-md animate-scaleIn shadow-2xl border-t-4 border-green-500">
+                    <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90dvh] overflow-y-auto animate-scaleIn shadow-2xl border-t-4 border-green-500">
                         <div className="flex items-center gap-3 text-green-600 mb-4">
                             <div className="p-2 bg-green-100 rounded-full"><CheckCircle size={24} /></div>
                             <h3 className="font-bold text-lg text-gray-900">اعتماد الأداء المؤسسي النهائي</h3>
                         </div>
-                        <p className="text-gray-600 mb-6 leading-relaxed font-medium">
-                            هل أنت متأكد من رغبتك في اعتماد نتيجة الأداء المؤسسي لهذه المؤسسة؟
-                            <br/>
-                            <span className="text-xs text-gray-400 font-normal">عند الاعتماد، ستظهر النتيجة النهائية للمؤسسة ولن يمكنهم إجراء تعديلات إضافية.</span>
+                        <p className="text-sm text-gray-600 mb-4 leading-relaxed">
+                            يصدر التقرير الرسمي للمؤسسة برقم مرجع وتاريخ اليوم.
                         </p>
+                        <div className="flex flex-col gap-3 mb-6">
+                            <label className="flex flex-col gap-1 text-sm font-bold text-gray-700">
+                                ملاحظات الوزارة في التقرير (اختياري)
+                                <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={4}
+                                    className="w-full rounded-lg border border-gray-300 p-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-green-500" />
+                            </label>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <label className="flex flex-col gap-1 text-sm font-bold text-gray-700">
+                                    اسم المعتمِد (اختياري)
+                                    <input value={approverName} onChange={e => setApproverName(e.target.value)}
+                                        className="w-full rounded-lg border border-gray-300 p-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-green-500" />
+                                </label>
+                                <label className="flex flex-col gap-1 text-sm font-bold text-gray-700">
+                                    المسمى الوظيفي (اختياري)
+                                    <input value={approverTitle} onChange={e => setApproverTitle(e.target.value)}
+                                        className="w-full rounded-lg border border-gray-300 p-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-green-500" />
+                                </label>
+                            </div>
+                        </div>
                         <div className="flex gap-3 justify-end">
                             <button type="button" onClick={() => setShowApproveModal(false)} className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-lg font-bold transition-colors">إلغاء</button>
                             <button type="button" onClick={confirmApprove} className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 font-bold shadow-md transition-colors">نعم، اعتماد</button>
@@ -249,6 +275,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { to: '/reports', icon: FileBarChart, label: 'النتائج والتقارير', roles: ['admin'] },
     { to: '/settings', icon: Settings, label: 'إعدادات النظام', roles: ['admin'] },
     { to: '/review-submit', icon: Send, label: 'المراجعة والإرسال', roles: ['user'] },
+    { to: '/reports', icon: FileBarChart, label: 'تقرير التقييم', roles: ['user'] },
     { to: '/feedback', icon: MessageSquarePlus, label: 'إبداء ملاحظة على النظام', roles: ['user'], badge: unseenReplies },
   ];
 

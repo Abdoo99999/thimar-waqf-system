@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import DeadlineNotice from '../components/DeadlineNotice';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   Building2,
@@ -129,6 +129,11 @@ const InstitutionHome: React.FC = () => {
             <span className="font-mono text-xl font-bold">{journey.completionPercent}%</span>
           </div>
         </div>
+        {journey.workflowStatus === 'approved' && (
+          <Link to="/reports" className="mt-5 inline-flex min-h-[44px] items-center gap-2 rounded-xl bg-white/80 px-4 text-sm font-extrabold hover:bg-white">
+            <FileText size={18} aria-hidden="true" /> عرض تقرير التقييم المعتمد
+          </Link>
+        )}
         {journey.workflowStatus === 'returned' && (
           <div className="mt-5 rounded-xl border border-orange-300/70 bg-white/75 p-4">
             <p className="mb-1 text-xs font-extrabold">ملاحظات الوزارة</p>

@@ -102,7 +102,7 @@ const AppRoutes: React.FC = () => {
         <Route path="/home" element={<ProtectedRoute requiredRole="user"><InstitutionHome /></ProtectedRoute>} />
         <Route path="/tracking" element={<ProtectedRoute requiredRole="admin"><Tracking /></ProtectedRoute>} />
         <Route path="/accounts" element={<ProtectedRoute requiredRole="admin"><Accounts /></ProtectedRoute>} />
-        <Route path="/reports" element={<ProtectedRoute requiredRole="admin"><Reports /></ProtectedRoute>} />
+        <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute requiredRole="admin"><Settings /></ProtectedRoute>} />
         <Route path="/approval-requests" element={<ProtectedRoute requiredRole="admin"><ApprovalRequests /></ProtectedRoute>} />
         <Route path="/system-feedback" element={<ProtectedRoute requiredRole="admin"><SystemFeedbackPage /></ProtectedRoute>} />

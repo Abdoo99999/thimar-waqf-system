@@ -82,6 +82,13 @@ export interface Indicator {
   active: boolean;
 }
 
+export interface ReportBenchmark {
+  overall: number;                 // نسبة مئوية
+  pillars: Record<string, number>; // لكل محور
+  institutions: number;            // عدد المؤسسات في المتوسط
+  computed_at: string;
+}
+
 export interface Evaluation {
   id: string;
   institution_id: string;
@@ -97,6 +104,13 @@ export interface Evaluation {
   declaration_accepted_at?: string; // وقت إقرار المؤسسة بصحة البيانات عند الإرسال
   returned_at?: string;
   approved_at?: string;
+
+  // التقرير الرسمي (يُعبّأ عند الاعتماد)
+  report_ref?: string;            // رقم المرجع
+  ministry_notes?: string;        // ملاحظات الوزارة في التقرير
+  approver_name?: string;
+  approver_title?: string;
+  report_benchmark?: ReportBenchmark; // متوسط المؤسسات وقت الاعتماد
 
   attachments?: InstitutionDocument[];
   created_at: string;
