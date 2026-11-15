@@ -154,6 +154,14 @@ const OfficialReport: React.FC<{ model: ReportModel; draft?: boolean }> = ({ mod
               </ul>
             </>
           )}
+          {m.compliance.naItems.length > 0 && (
+            <>
+              <p className="m-0 text-sm font-bold">بنود أُعلنت غير منطبقة:</p>
+              <ul className="m-0 flex list-disc flex-col gap-1 ps-5 text-sm leading-6 text-slate-700">
+                {m.compliance.naItems.map((x, i) => <li key={i}>{x.label}<span className="block text-xs text-slate-500">السبب: {x.note || 'لم يُذكر'}</span></li>)}
+              </ul>
+            </>
+          )}
         </div>
         <div className="flex flex-col gap-3">
           <H2 n={5}>أبرز المخاطر</H2>

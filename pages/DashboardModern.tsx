@@ -37,9 +37,10 @@ const TAG = { bad: 'bg-red-50 text-red-700', warn: 'bg-amber-50 text-amber-800',
 const LEVEL_RANGE: Record<string, string> = { 'ممتاز': '90% فأعلى', 'جيد جداً': '75–89%', 'جيد': '60–74%', 'مقبول': '50–59%', 'ضعيف': 'أقل من 50%' };
 const share = (n: number, t: number) => `${t ? Math.round((n / t) * 100) : 0}%`;
 
-const DashboardInner: React.FC<{ onSwitchLayout?: () => void }> = ({ onSwitchLayout }) => {
+const DashboardInner: React.FC = () => {
   const tip = useTip();
-  const { currentWaqfId, setWaqfContext, currentYear, setYearContext } = useUi();
+  const { currentWaqfId, setWaqfContext, currentYear, setYearContext, role } = useUi();
+  const isAdmin = role === 'admin'; // وضع العرض التوضيحي من صلاحية المدير فقط
   const navigate = useNavigate();
   const [demoMode, setDemoMode] = useState(() => getSettings().demoMode === true);
   const [tick, setTick] = useState(0);
@@ -93,11 +94,10 @@ const DashboardInner: React.FC<{ onSwitchLayout?: () => void }> = ({ onSwitchLay
           <button type="button" onClick={() => window.print()} aria-label="ملخص للعرض" className="no-print inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl bg-navy-900 text-white sm:hidden">
             <Printer size={18} aria-hidden="true" />
           </button>
-          {onSwitchLayout && <div className="no-print mt-1 hidden flex-wrap items-center gap-4 text-sm sm:flex">
+          {isAdmin && <div className="no-print mt-1 hidden flex-wrap items-center gap-4 text-sm sm:flex">
             <label className="flex cursor-pointer items-center gap-2 font-bold text-amber-800">
               <input type="checkbox" role="switch" checked={demoMode} onChange={toggleDemo} className="h-5 w-5 accent-amber-600" /> وضع العرض التوضيحي
             </label>
-            <button type="button" onClick={onSwitchLayout} className="font-bold text-slate-600 underline underline-offset-4 hover:text-navy-900">العودة للشكل السابق</button>
           </div>}
         </div>
         <div className="no-print grid grid-cols-[96px_minmax(0,1fr)] items-end gap-2 sm:flex sm:flex-wrap sm:gap-3">
@@ -116,14 +116,13 @@ const DashboardInner: React.FC<{ onSwitchLayout?: () => void }> = ({ onSwitchLay
             <Printer size={18} aria-hidden="true" /> ملخص للعرض
           </button>
         </div>
-        {onSwitchLayout && (
+        {isAdmin && (
           <details className="no-print rounded-xl border border-slate-200 bg-white px-3 text-sm sm:hidden">
-            <summary className="flex min-h-[44px] cursor-pointer items-center font-bold text-slate-600">خيارات العرض</summary>
+            <summary className="flex min-h-[44px] cursor-pointer items-center font-bold text-slate-600">وضع العرض التوضيحي</summary>
             <div className="flex flex-col gap-3 pb-3">
               <label className="flex cursor-pointer items-center gap-2 font-bold text-amber-800">
                 <input type="checkbox" role="switch" checked={demoMode} onChange={toggleDemo} className="h-5 w-5 accent-amber-600" /> وضع العرض التوضيحي
               </label>
-              <button type="button" onClick={onSwitchLayout} className="self-start font-bold text-slate-600 underline underline-offset-4">العودة للشكل السابق</button>
             </div>
           </details>
         )}
@@ -379,8 +378,8 @@ const DashboardInner: React.FC<{ onSwitchLayout?: () => void }> = ({ onSwitchLay
   );
 };
 
-const DashboardModern: React.FC<{ onSwitchLayout?: () => void }> = props => (
-  <TipProvider><DashboardInner {...props} /></TipProvider>
+const DashboardModern: React.FC = () => (
+  <TipProvider><DashboardInner /></TipProvider>
 );
 
 export default DashboardModern;

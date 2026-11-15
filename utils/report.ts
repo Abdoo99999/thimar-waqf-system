@@ -84,7 +84,7 @@ export interface ReportModel {
   priorities: string[];
   pillars: { name: string; inst: number; avg?: number }[];
   financial: { year: number; unaudited: boolean; auditor: string; rows: { name: string; value: string; rule: string; tone: Tone }[] } | null;
-  compliance: { pct: number; met: number; applicable: number; missing: string[] };
+  compliance: { pct: number; met: number; applicable: number; missing: string[]; naItems: { label: string; note: string }[] };
   risks: { title: string; level: string; tone: Tone }[];
   riskTotal: number;
   plan: { total: number; done: number; doing: number; todo: number; items: { title: string; owner: string; due: string; status: string; tone: Tone }[] };
@@ -169,7 +169,7 @@ export const buildReport = (institutionId: string, year: number, liveBenchmark?:
     institutionName: inst.name, evaluation: ev, year, approved,
     overall: scores.overall, level: scoreLevel(scores.overall), benchmark,
     strengths, priorities, pillars, financial,
-    compliance: { pct: cs.pct, met: cs.met, applicable: cs.applicable, missing: cs.missing },
+    compliance: { pct: cs.pct, met: cs.met, applicable: cs.applicable, missing: cs.missing, naItems: cs.naItems },
     risks, riskTotal: allRisks.length,
     plan: {
       total: improvements.length,

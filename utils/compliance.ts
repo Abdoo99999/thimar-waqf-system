@@ -5,7 +5,8 @@ import { getInstitutions, getFinancialRecords } from '../services/db';
 import type { ComplianceRecord, CustomRequirement, ObligationAnswer, RiskRegisterItem } from '../types';
 
 // ─── الالتزامات النظامية (مسودة قابلة للتعديل وفق اللوائح) ───────────────────
-export interface Obligation { id: string; label: string; hint: string; legacyKey?: string }
+// naAllowed: البنود الجوهرية لا تقبل «لا ينطبق»؛ تُسمح فقط لما قد لا يخص كل مؤسسة
+export interface Obligation { id: string; label: string; hint: string; legacyKey?: string; naAllowed?: boolean }
 export interface ObligationGroup { title: string; items: Obligation[] }
 
 export const OBLIGATION_GROUPS: ObligationGroup[] = [
@@ -22,11 +23,11 @@ export const OBLIGATION_GROUPS: ObligationGroup[] = [
   { title: 'الأصول الوقفية', items: [
     { id: 'asset_register', label: 'وجود سجل محدّث بجميع الأصول الوقفية', hint: 'الدليل: السجل أو تصديره' },
     { id: 'title_deeds', label: 'توثيق ملكية الأصول وتسجيلها رسمياً', hint: 'الدليل: الصكوك أو شهادات التسجيل' },
-    { id: 'leases', label: 'عقود الإيجار موثقة وسارية', hint: 'الدليل: نماذج من العقود السارية' },
+    { id: 'leases', label: 'عقود الإيجار موثقة وسارية', hint: 'الدليل: نماذج من العقود السارية', naAllowed: true },
   ]},
   { title: 'السياسات واللوائح', items: [
     { id: 'financial_policy', label: 'لائحة مالية معتمدة من مجلس الإدارة', hint: 'الدليل: اللائحة وقرار اعتمادها' },
-    { id: 'investment_policy', label: 'سياسة استثمار معتمدة متوافقة مع الضوابط الشرعية', hint: 'الدليل: السياسة وقرار اعتمادها' },
+    { id: 'investment_policy', label: 'سياسة استثمار معتمدة متوافقة مع الضوابط الشرعية', hint: 'الدليل: السياسة وقرار اعتمادها', naAllowed: true },
   ]},
 ];
 export const ALL_OBLIGATIONS = OBLIGATION_GROUPS.flatMap(g => g.items);
@@ -134,12 +135,13 @@ export interface ComplianceSummary {
   met: number; applicable: number; pct: number;
   yes: number; no: number; unanswered: number; missingEvidence: number; missingNotes: number;
   missing: string[]; gaps: ComplianceGap[];
+  naItems: { label: string; note: string }[]; // بنود أُعلنت غير منطبقة مع أسبابها (للمراجع)
 }
 
 const LEGACY_GAP_KEY: Record<AutoCheck['key'], string> = { exec: 'exec', audit: 'audit', finance: 'finance', board: 'board' };
 
 export const summarizeCompliance = (rec: Partial<ComplianceRecord> | undefined, checks: AutoCheck[]): ComplianceSummary => {
-  const s: ComplianceSummary = { met: 0, applicable: 0, pct: 0, yes: 0, no: 0, unanswered: 0, missingEvidence: 0, missingNotes: 0, missing: [], gaps: [] };
+  const s: ComplianceSummary = { met: 0, applicable: 0, pct: 0, yes: 0, no: 0, unanswered: 0, missingEvidence: 0, missingNotes: 0, missing: [], gaps: [], naItems: [] };
   if (!rec) {
     s.missing.push('لم يتم إنشاء سجل الامتثال لهذا العام');
     return s;
@@ -160,16 +162,21 @@ export const summarizeCompliance = (rec: Partial<ComplianceRecord> | undefined, 
 
   // الالتزامات والمتطلبات الإضافية
   const items: { key: string; label: string; answer?: ObligationAnswer; hasDoc: boolean; note?: string }[] = [
-    ...ALL_OBLIGATIONS.map(o => ({
-      key: o.id === 'minutes' ? 'minutes' : `obl_${o.id}`, label: o.label,
-      answer: r.obligations?.[o.id], hasDoc: !!r.obligation_evidence?.[o.id], note: r.obligation_notes?.[o.id],
-    })),
+    ...ALL_OBLIGATIONS.map(o => {
+      const a = r.obligations?.[o.id];
+      return {
+        key: o.id === 'minutes' ? 'minutes' : `obl_${o.id}`, label: o.label,
+        // «لا ينطبق» على بند جوهري لا يُقبل ويُعامل كأنه لم يُجب
+        answer: a === 'na' && !o.naAllowed ? undefined : a,
+        hasDoc: !!r.obligation_evidence?.[o.id], note: r.obligation_notes?.[o.id],
+      };
+    }),
     ...(r.custom_requirements || []).map((c: CustomRequirement) => ({
       key: `custom_${c.id}`, label: `متطلب إضافي: ${c.text}`, answer: c.answer, hasDoc: !!c.evidence_doc, note: c.note,
     })),
   ];
   items.forEach(it => {
-    if (it.answer === 'na') return;
+    if (it.answer === 'na') { s.naItems.push({ label: it.label, note: (it.note || '').trim() }); return; }
     s.applicable++;
     if (it.answer === 'yes') { s.met++; s.yes++; if (!it.hasDoc) s.missingEvidence++; return; }
     if (it.answer === 'no') {

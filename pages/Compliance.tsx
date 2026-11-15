@@ -44,8 +44,10 @@ const ObligationCard: React.FC<{
   answer?: ObligationAnswer; doc?: InstitutionDocument; note?: string;
   locked: boolean; uploading: boolean; highlight: boolean;
   onAnswer: (a: ObligationAnswer) => void; onUpload: (f: File) => void; onRemoveDoc: () => void; onNote: (t: string) => void;
-  onDelete?: () => void;
-}> = ({ domId, label, hint, answer, doc, note, locked, uploading, highlight, onAnswer, onUpload, onRemoveDoc, onNote, onDelete }) => (
+  onDelete?: () => void; allowNa?: boolean;
+}> = ({ domId, label, hint, answer: rawAnswer, doc, note, locked, uploading, highlight, onAnswer, onUpload, onRemoveDoc, onNote, onDelete, allowNa = true }) => {
+  const answer = rawAnswer === 'na' && !allowNa ? undefined : rawAnswer;
+  return (
   <div id={domId} className={`rounded-xl border-2 bg-white p-4 flex flex-col gap-3 ${cardBorder(answer, !!doc)} ${highlight ? 'ring-4 ring-[#fdba74]/60' : ''}`}>
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex flex-col gap-1 min-w-0" style={{ flex: '1 1 320px' }}>
@@ -53,7 +55,7 @@ const ObligationCard: React.FC<{
         {hint && <span className="text-[13px] text-slate-500">{hint}</span>}
       </div>
       <div role="group" aria-label="حالة الالتزام" className="flex flex-wrap gap-1.5">
-        {OPTIONS.map(([val, text]) => (
+        {OPTIONS.filter(([val]) => allowNa || val !== 'na').map(([val, text]) => (
           <button key={val} type="button" disabled={locked} aria-pressed={answer === val}
             onClick={() => onAnswer(val)}
             className={`${BTN} ${answer === val ? OPT_STYLE[val] : OPT_OFF}`}>{text}</button>
@@ -98,8 +100,18 @@ const ObligationCard: React.FC<{
           className="rounded-lg border border-[#fdba74] p-2.5 text-sm resize-y disabled:bg-slate-50" />
       </div>
     )}
+
+    {answer === 'na' && (
+      <div className="flex flex-col gap-1.5 border-t border-dashed border-slate-300 pt-3">
+        <label htmlFor={`${domId}-na`} className="text-[13px] font-bold text-slate-700">سبب عدم انطباق هذا البند على المؤسسة (إلزامي، يطّلع عليه مراجع الوزارة)</label>
+        <textarea id={`${domId}-na`} rows={2} disabled={locked} value={note || ''} onChange={e => onNote(e.target.value)}
+          placeholder="مثال: لا تملك المؤسسة أصولاً مؤجرة حالياً"
+          className="rounded-lg border border-slate-300 p-2.5 text-sm resize-y disabled:bg-slate-50" />
+      </div>
+    )}
   </div>
-);
+  );
+};
 
 const CompliancePage: React.FC = () => {
   const { showToast, currentWaqfId, role } = useUi();
@@ -181,7 +193,8 @@ const CompliancePage: React.FC = () => {
   const firstProblem = (): { msg: string; target?: string; riskTab?: boolean } | null => {
     for (const g of OBLIGATION_GROUPS) for (const o of g.items) {
       const a = record.obligations?.[o.id];
-      if (!a) return { msg: `يرجى الإجابة على: ${o.label}`, target: `obl-${o.id}` };
+      if (!a || (a === 'na' && !o.naAllowed)) return { msg: `يرجى الإجابة على: ${o.label}`, target: `obl-${o.id}` };
+      if (a === 'na' && !(record.obligation_notes?.[o.id] || '').trim()) return { msg: `يرجى كتابة سبب عدم الانطباق: ${o.label}`, target: `obl-${o.id}` };
       if (a === 'yes' && !record.obligation_evidence?.[o.id]) return { msg: `يرجى إرفاق دليل: ${o.label}`, target: `obl-${o.id}` };
       if (a === 'no' && !(record.obligation_notes?.[o.id] || '').trim()) return { msg: `يرجى كتابة سبب عدم الالتزام: ${o.label}`, target: `obl-${o.id}` };
     }
@@ -189,6 +202,7 @@ const CompliancePage: React.FC = () => {
       if (!c.answer) return { msg: `يرجى الإجابة على: ${c.text}`, target: `custom-${c.id}` };
       if (c.answer === 'yes' && !c.evidence_doc) return { msg: `يرجى إرفاق دليل: ${c.text}`, target: `custom-${c.id}` };
       if (c.answer === 'no' && !(c.note || '').trim()) return { msg: `يرجى كتابة سبب عدم الالتزام: ${c.text}`, target: `custom-${c.id}` };
+      if (c.answer === 'na' && !(c.note || '').trim()) return { msg: `يرجى كتابة سبب عدم الانطباق: ${c.text}`, target: `custom-${c.id}` };
     }
     if (risks.length === 0) return { msg: 'يرجى تسجيل خطر واحد على الأقل في سجل المخاطر', riskTab: true };
     return null;
@@ -368,7 +382,7 @@ const CompliancePage: React.FC = () => {
                 </div>
                 {g.items.map(o => (
                   <ObligationCard key={o.id} domId={`obl-${o.id}`} label={o.label} hint={o.hint}
-                    answer={record.obligations?.[o.id]} doc={record.obligation_evidence?.[o.id]} note={record.obligation_notes?.[o.id]}
+                    allowNa={!!o.naAllowed} answer={record.obligations?.[o.id]} doc={record.obligation_evidence?.[o.id]} note={record.obligation_notes?.[o.id]}
                     locked={isLocked} uploading={uploadingKey === o.id} highlight={highlight === `obl-${o.id}`}
                     onAnswer={a => setAnswer(o.id, a)}
                     onUpload={f => upload(o.id, f, d => update(r => ({ ...r, obligation_evidence: { ...(r.obligation_evidence || {}), [o.id]: d } })))}
