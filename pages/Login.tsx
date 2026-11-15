@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUi } from '../contexts/UiContext';
 import { loginInstitution, loginAdmin } from '../services/db';
-import { Lock, Building2, ArrowRight, KeyRound, AlertTriangle } from 'lucide-react';
+import { Lock, Building2, ArrowRight, KeyRound } from 'lucide-react';
 
 const Login: React.FC = () => {
   const { login, showToast, setWaqfContext } = useUi();
@@ -45,8 +45,8 @@ const Login: React.FC = () => {
       </div>
 
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden relative z-10">
-        <div className="bg-navy-900 p-8 text-center border-b-4 border-gold-500">
-          <div className="w-56 h-32 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-sm p-3">
+        <div className="bg-navy-900 px-6 py-5 sm:p-8 text-center border-b-4 border-gold-500">
+          <div className="w-40 h-24 sm:w-56 sm:h-32 bg-white rounded-2xl flex items-center justify-center mx-auto mb-3 sm:mb-4 shadow-sm p-2 sm:p-3">
             <img
               src="/logo.png"
               alt="Logo"
@@ -66,23 +66,14 @@ const Login: React.FC = () => {
           </div>
         </div>
 
-        {/* Trial Warning */}
-        <div className="mx-6 mt-5 bg-amber-50 border border-amber-300 rounded-xl p-4 flex gap-3 items-start">
-          <AlertTriangle size={20} className="text-amber-600 shrink-0 mt-0.5" />
-          <p className="text-xs text-amber-800 leading-relaxed font-medium">
-            <strong>تنبيه:</strong> هذه نسخة تجريبية مخصصة لاختبار النظام وتقديم الملاحظات.
-            يرجى عدم إدخال بيانات فعلية أو وثائق سرية.
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          <div className="text-center mb-4">
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-4 sm:space-y-5">
+          <div className="text-center mb-2 sm:mb-4">
             <h3 className="text-lg font-bold text-gray-800">مرحباً بك في بوابة الخدمات الوقفية</h3>
             <p className="text-sm text-gray-500 mt-1">أدخل رمز الدخول وكلمة المرور الخاصة بمؤسستك</p>
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">رمز الدخول <span className="font-normal text-gray-500">(أو اسم المستخدم لموظفي الوزارة)</span></label>
+            <label className="block text-sm font-bold text-gray-700 mb-2">رمز الدخول</label>
             <div className="relative">
               <KeyRound className="absolute top-3 right-3 text-gray-400" size={20} />
               <input

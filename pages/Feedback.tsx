@@ -25,14 +25,14 @@ const MyFeedback: React.FC<{ items: SystemFeedback[]; newReplies: Set<string> }>
               <div className="flex flex-wrap items-center gap-2 mb-2">
                 <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
                 <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{f.page}</span>
-                <span className="text-xs text-gray-400">{new Date(f.submitted_at).toLocaleDateString('ar-OM')}</span>
+                <span className="text-xs text-gray-400">{new Date(f.submitted_at).toLocaleDateString('ar-OM-u-nu-latn')}</span>
                 {newReplies.has(f.id) && <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-teal-600 text-white">رد جديد</span>}
               </div>
               <p className="text-sm text-gray-700 whitespace-pre-wrap">{f.text}</p>
               {f.admin_reply && (
                 <div className="mt-3 rounded-lg bg-teal-50 border border-teal-200 p-3">
                   <p className="flex items-center gap-1.5 text-xs font-bold text-teal-800 mb-1">
-                    <Reply size={14} aria-hidden="true" /> رد الوزارة{f.replied_at ? ` · ${new Date(f.replied_at).toLocaleDateString('ar-OM')}` : ''}
+                    <Reply size={14} aria-hidden="true" /> رد الوزارة{f.replied_at ? ` · ${new Date(f.replied_at).toLocaleDateString('ar-OM-u-nu-latn')}` : ''}
                   </p>
                   <p className="text-sm text-gray-800 whitespace-pre-wrap">{f.admin_reply}</p>
                 </div>

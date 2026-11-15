@@ -16,7 +16,7 @@ export const getDeadline = (): DeadlineInfo | null => {
     : daysLeft === 1 ? 'باقي يوم واحد'
     : daysLeft === 2 ? 'باقي يومان'
     : daysLeft <= 10 ? `باقي ${daysLeft} أيام` : `باقي ${daysLeft} يوماً`;
-  const dateLabel = end.toLocaleDateString('ar-OM', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const dateLabel = end.toLocaleDateString('ar-OM-u-nu-latn', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   return { date, daysLeft, tone, label, dateLabel };
 };
 

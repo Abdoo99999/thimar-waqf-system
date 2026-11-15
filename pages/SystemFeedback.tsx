@@ -125,8 +125,8 @@ const SystemFeedbackPage: React.FC = () => {
                         </div>
                       </div>
                       <div className="text-left shrink-0">
-                        <p className="text-xs text-gray-400">{new Date(f.submitted_at).toLocaleDateString('ar-OM')}</p>
-                        <p className="text-xs text-gray-400">{new Date(f.submitted_at).toLocaleTimeString('ar-OM', { hour: '2-digit', minute: '2-digit' })}</p>
+                        <p className="text-xs text-gray-400">{new Date(f.submitted_at).toLocaleDateString('ar-OM-u-nu-latn')}</p>
+                        <p className="text-xs text-gray-400">{new Date(f.submitted_at).toLocaleTimeString('ar-OM-u-nu-latn', { hour: '2-digit', minute: '2-digit' })}</p>
                       </div>
                     </div>
                   </div>
@@ -159,7 +159,7 @@ const SystemFeedbackPage: React.FC = () => {
                           <textarea id={`reply-${f.id}`} rows={3} value={draftOf(f).reply} onChange={e => setDraft(f, { reply: e.target.value })}
                             placeholder="مثال: شكراً لملاحظتك، تم إصلاح المشكلة في التحديث الأخير."
                             className="w-full rounded-lg border border-gray-300 p-2.5 text-sm resize-y focus:ring-2 focus:ring-teal-500 outline-none" />
-                          {f.replied_at && <p className="text-[11px] text-gray-400 mt-1">آخر رد: {new Date(f.replied_at).toLocaleString('ar-OM')}{f.reply_seen ? ' · اطّلعت عليه المؤسسة' : ' · لم تطّلع عليه المؤسسة بعد'}</p>}
+                          {f.replied_at && <p className="text-[11px] text-gray-400 mt-1">آخر رد: {new Date(f.replied_at).toLocaleString('ar-OM-u-nu-latn')}{f.reply_seen ? ' · اطّلعت عليه المؤسسة' : ' · لم تطّلع عليه المؤسسة بعد'}</p>}
                         </div>
                         <button type="button" disabled={savingId === f.id} onClick={() => saveReply(f)}
                           className="inline-flex items-center gap-2 min-h-[40px] px-4 rounded-lg bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white text-sm font-bold">

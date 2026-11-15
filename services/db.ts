@@ -48,7 +48,7 @@ export const uploadFile = (file: File, institutionId?: string | null): Promise<I
         const data = String(reader.result).split(',')[1] || '';
         const r = await request('POST', '/files', { name: file.name, data, institution_id: institutionId || undefined });
         resolve({ id: generateId(), file_id: r.id, name: file.name, type: file.type,
-                  size: (file.size / 1024).toFixed(1) + ' KB', upload_date: new Date().toLocaleDateString('ar-OM') });
+                  size: (file.size / 1024).toFixed(1) + ' KB', upload_date: new Date().toLocaleDateString('ar-OM-u-nu-latn') });
       } catch (e) { reject(e); }
     };
     reader.onerror = () => reject(new Error('تعذر قراءة الملف'));

@@ -160,18 +160,18 @@ const Tracking: React.FC = () => {
         </section>
       ) : (
         <>
-          <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+          <section className="grid grid-cols-3 gap-2 sm:gap-3 xl:grid-cols-6">
             {SUMMARY_TILES.map(tile => (
               <button
                 key={tile.key}
                 onClick={() => setStatusFilter(tile.key)}
-                className={`rounded-2xl border p-4 text-right transition hover:-translate-y-0.5 ${
+                className={`min-h-[44px] rounded-xl border p-2.5 text-right transition hover:-translate-y-0.5 sm:rounded-2xl sm:p-4 ${
                   statusFilter === tile.key ? 'border-[#729b90] bg-[#f0f7f4] shadow-sm' : 'border-[#e3ebe8] bg-[#fbfdfb] hover:border-[#b6ccc4]'
                 }`}
               >
-                <span className={`mb-3 flex h-8 w-8 items-center justify-center rounded-lg ${tile.accent}`}>{tile.icon}</span>
-                <span className="block text-xs font-semibold text-slate-500">{tile.label}</span>
-                <span className="mt-1 block font-mono text-2xl font-bold text-[#193b3e]">
+                <span className={`mb-3 hidden h-8 w-8 items-center justify-center rounded-lg sm:flex ${tile.accent}`}>{tile.icon}</span>
+                <span className="block truncate text-[11px] font-semibold text-slate-500 sm:text-xs">{tile.label}</span>
+                <span className="mt-0.5 block text-xl font-extrabold text-[#193b3e] sm:mt-1 sm:text-2xl">
                   {loading ? <span className="inline-block h-7 w-8 animate-pulse rounded bg-slate-200" /> : counts[tile.key]}
                 </span>
               </button>

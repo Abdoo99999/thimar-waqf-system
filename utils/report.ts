@@ -68,7 +68,7 @@ export const nextReportRef = (year: number) => {
 };
 
 export const formatDate = (iso?: string) =>
-  iso ? new Date(iso).toLocaleDateString('ar-OM', { year: 'numeric', month: 'long', day: 'numeric' }) : '—';
+  iso ? new Date(iso).toLocaleDateString('ar-OM-u-nu-latn', { year: 'numeric', month: 'long', day: 'numeric' }) : '—';
 
 const money = (n: number) => `${Math.round(n).toLocaleString('en-US')} ر.ع`;
 

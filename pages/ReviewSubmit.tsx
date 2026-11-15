@@ -20,7 +20,7 @@ const STATUS_BANNER = {
   approved: { title: 'معتمد من الوزارة', cls: 'bg-emerald-50 border-emerald-200 text-emerald-900' },
 } as const;
 
-const fmtDate = (iso?: string) => (iso ? new Date(iso).toLocaleDateString('ar-OM', { year: 'numeric', month: 'long', day: 'numeric' }) : '');
+const fmtDate = (iso?: string) => (iso ? new Date(iso).toLocaleDateString('ar-OM-u-nu-latn', { year: 'numeric', month: 'long', day: 'numeric' }) : '');
 
 const ReviewSubmit: React.FC = () => {
   const { currentWaqfId, showToast, role } = useUi();

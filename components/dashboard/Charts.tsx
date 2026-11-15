@@ -100,7 +100,7 @@ export const ProgressCurve: React.FC<{
   const lastS = submitted[submitted.length - 1], lastA = approved[approved.length - 1];
   const tx = X(nowWeek);
   return (
-    <svg role="img" aria-label={`التقييمات المرفوعة ${lastS?.v ?? 0} والمعتمدة ${lastA?.v ?? 0} من ${total}`} viewBox="0 0 820 290" direction="ltr" className="block w-full min-w-[600px]">
+    <svg role="img" aria-label={`التقييمات المرفوعة ${lastS?.v ?? 0} والمعتمدة ${lastA?.v ?? 0} من ${total}`} viewBox="0 0 820 290" direction="ltr" className="block w-full" style={{ minWidth: 640 }}>
       {grid.map(v => (<g key={v}><line x1="50" x2="790" y1={Y(v)} y2={Y(v)} stroke="#e2e8f0" /><text x="40" y={Y(v) + 4} textAnchor="end" fontSize="12" fill="#475569">{v}</text></g>))}
       <line x1="50" x2="790" y1={Y(max)} y2={Y(max)} stroke="#94a3b8" strokeDasharray="5 4" />
       <text x="40" y={Y(max) + 4} textAnchor="end" fontSize="12" fill="#475569">{max}</text>

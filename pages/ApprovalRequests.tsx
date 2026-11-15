@@ -71,7 +71,7 @@ const ApprovalRequests: React.FC = () => {
           <div key={req.eval.id} className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
             <p className="font-bold text-navy-900">{req.inst.name}</p>
             <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
-              <span className="flex items-center gap-1.5 text-gray-500"><Clock size={14} />{new Date(req.eval.submission_date!).toLocaleDateString('ar-OM')}</span>
+              <span className="flex items-center gap-1.5 text-gray-500"><Clock size={14} />{new Date(req.eval.submission_date!).toLocaleDateString('ar-OM-u-nu-latn')}</span>
               <span className={`px-2 py-0.5 rounded font-bold ${Number(req.score) >= 4 ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{req.score} / 5.0 ({Math.round(Number(req.score) / 5 * 100)}%)</span>
             </div>
             <button onClick={() => handleView(req.inst.id)} className="mt-3 w-full min-h-[44px] flex items-center justify-center gap-2 rounded-lg bg-blue-50 text-blue-700 font-bold text-sm">
@@ -102,7 +102,7 @@ const ApprovalRequests: React.FC = () => {
                   <td className="p-4 text-gray-500 text-sm">
                     <div className="flex items-center gap-2">
                       <Clock size={14} />
-                      {new Date(req.eval.submission_date!).toLocaleDateString('ar-OM')}
+                      {new Date(req.eval.submission_date!).toLocaleDateString('ar-OM-u-nu-latn')}
                     </div>
                   </td>
                   <td className="p-4">

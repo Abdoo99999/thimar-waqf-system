@@ -117,13 +117,13 @@ const Accounts: React.FC = () => {
                   </span>
                 </div>
                 <div className="mt-3 flex gap-2">
-                  <button disabled={busy} onClick={() => handleNewPassword(acc.institution_id)} className="min-h-[44px] flex-1 rounded-lg border border-navy-200 bg-white text-navy-800 text-sm font-bold disabled:opacity-50">كلمة مرور جديدة</button>
-                  <button disabled={busy} onClick={() => { setPwFor(acc.institution_id); setPwValue(''); }} className="min-h-[44px] flex-1 rounded-lg border border-navy-200 bg-white text-navy-800 text-sm font-bold disabled:opacity-50">تعيين كلمة مرور</button>
+                  <button disabled={busy} onClick={() => handleNewPassword(acc.institution_id)} className="min-h-[44px] flex-1 rounded-lg border border-navy-200 bg-white px-1 text-navy-800 text-[13px] font-bold whitespace-nowrap disabled:opacity-50">كلمة عشوائية</button>
+                  <button disabled={busy} onClick={() => { setPwFor(acc.institution_id); setPwValue(''); }} className="min-h-[44px] flex-1 rounded-lg border border-navy-200 bg-white px-1 text-navy-800 text-[13px] font-bold whitespace-nowrap disabled:opacity-50">تعيين كلمة</button>
                   {resetDone === acc.institution_id ? (
                     <span className="min-h-[44px] flex-1 flex items-center justify-center gap-1 text-green-600 text-sm font-bold"><CheckCircle size={14} /> تم الإعادة</span>
                   ) : (
-                    <button onClick={() => setConfirmResetId(acc.institution_id)} className="min-h-[44px] flex-1 inline-flex items-center justify-center gap-1 rounded-lg text-sm font-bold text-orange-600 bg-orange-50 border border-orange-200">
-                      <RotateCcw size={14} /> إعادة تعيين
+                    <button onClick={() => setConfirmResetId(acc.institution_id)} className="min-h-[44px] flex-1 inline-flex items-center justify-center gap-1 rounded-lg px-1 text-[13px] font-bold whitespace-nowrap text-orange-600 bg-orange-50 border border-orange-200">
+                      <RotateCcw size={14} /> تصفير
                     </button>
                   )}
                 </div>

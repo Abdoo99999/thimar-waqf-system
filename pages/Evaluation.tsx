@@ -531,11 +531,11 @@ const EvaluationPage: React.FC = () => {
       )}
 
       {/* FIXED FOOTER BAR */}
-      <div className="fixed bottom-0 left-0 right-0 lg:right-64 bg-white border-t border-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.1)] z-40 px-6 py-4">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-4 max-w-6xl mx-auto">
+      <div className="fixed bottom-0 left-0 right-0 lg:right-64 bg-white border-t border-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.1)] z-40 px-3 py-2.5 sm:px-6 sm:py-4">
+          <div className="flex flex-row justify-between items-center gap-3 sm:gap-4 max-w-6xl mx-auto">
              
              {/* Left: Stats */}
-             <div className="flex items-center gap-6 w-full md:w-auto">
+             <div className="flex min-w-0 flex-1 items-center gap-6 md:flex-none">
                  <div className="hidden md:flex items-center gap-3 pr-4 border-r border-gray-200">
                     <div className="w-10 h-10">
                         <ResponsiveContainer width="100%" height="100%">
@@ -552,7 +552,7 @@ const EvaluationPage: React.FC = () => {
 
                  <div className="flex-1">
                     <div className="flex justify-between items-end mb-1">
-                        <span className="text-sm font-bold text-navy-900">التقدم الكلي</span>
+                        <span className="hidden text-sm font-bold text-navy-900 sm:inline">التقدم الكلي</span>
                         <span className="text-sm font-bold text-teal-600">{Object.keys(responses).length} / {indicators.length}</span>
                     </div>
                     <div className="w-full md:w-64 h-2 bg-gray-100 rounded-full overflow-hidden">
@@ -562,8 +562,8 @@ const EvaluationPage: React.FC = () => {
              </div>
 
              {/* Right: Actions */}
-             <div className="flex items-center gap-3 w-full md:w-auto justify-end">
-                 <label className={`cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2.5 rounded-xl flex items-center gap-2 text-sm font-bold transition-all ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}>
+             <div className="flex shrink-0 items-center gap-2 sm:gap-3 justify-end">
+                 <label className={`cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 sm:px-4 min-h-[44px] rounded-xl flex items-center gap-2 text-sm font-bold transition-all ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}>
                      <Paperclip size={18} /> <span className="hidden sm:inline">أدلة</span>
                      <input type="file" accept={ATTACHMENT_ACCEPT} className="hidden" onChange={handleFileUpload} disabled={isLocked} />
                  </label>
@@ -573,13 +573,13 @@ const EvaluationPage: React.FC = () => {
                  )}
 
                  {!isLocked && (
-                    <button onClick={handleFinalSave} className="bg-teal-700 hover:bg-teal-800 text-white px-6 min-h-[48px] rounded-xl flex items-center gap-2 shadow-md transition font-bold text-[15px]">
-                        {role === 'user' ? <>حفظ والانتقال إلى: الامتثال والمخاطر <ArrowLeft size={18} aria-hidden="true" /></> : <><Save size={18} /> حفظ وإنهاء التقييم</>}
+                    <button onClick={handleFinalSave} className="bg-teal-700 hover:bg-teal-800 text-white px-4 sm:px-6 min-h-[48px] rounded-xl flex items-center gap-2 shadow-md transition font-bold text-[15px] whitespace-nowrap">
+                        {role === 'user' ? <><span className="sm:hidden">حفظ والتالي</span><span className="hidden sm:inline">حفظ والانتقال إلى: الامتثال والمخاطر</span> <ArrowLeft size={18} aria-hidden="true" /></> : <><Save size={18} /> حفظ وإنهاء التقييم</>}
                     </button>
                  )}
                  {isLocked && role === 'user' && (
-                    <Link to="/compliance" className="bg-teal-700 hover:bg-teal-800 text-white px-6 min-h-[48px] rounded-xl flex items-center gap-2 shadow-md transition font-bold text-[15px]">
-                        التالي: الامتثال والمخاطر <ArrowLeft size={18} aria-hidden="true" />
+                    <Link to="/compliance" className="bg-teal-700 hover:bg-teal-800 text-white px-4 sm:px-6 min-h-[48px] rounded-xl flex items-center gap-2 shadow-md transition font-bold text-[15px] whitespace-nowrap">
+                        <span className="sm:hidden">التالي</span><span className="hidden sm:inline">التالي: الامتثال والمخاطر</span> <ArrowLeft size={18} aria-hidden="true" />
                     </Link>
                  )}
              </div>

@@ -87,32 +87,46 @@ const DashboardInner: React.FC<{ onSwitchLayout?: () => void }> = ({ onSwitchLay
         </div>
       )}
 
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="m-0 text-[28px] font-extrabold">لوحة القيادة</h1>
-          {onSwitchLayout && <div className="no-print flex flex-wrap items-center gap-4 text-sm">
+      <header className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:gap-4">
+        <div className="flex items-center justify-between gap-3 sm:block">
+          <h1 className="m-0 text-2xl font-extrabold sm:text-[28px]">لوحة القيادة</h1>
+          <button type="button" onClick={() => window.print()} aria-label="ملخص للعرض" className="no-print inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl bg-navy-900 text-white sm:hidden">
+            <Printer size={18} aria-hidden="true" />
+          </button>
+          {onSwitchLayout && <div className="no-print mt-1 hidden flex-wrap items-center gap-4 text-sm sm:flex">
             <label className="flex cursor-pointer items-center gap-2 font-bold text-amber-800">
               <input type="checkbox" role="switch" checked={demoMode} onChange={toggleDemo} className="h-5 w-5 accent-amber-600" /> وضع العرض التوضيحي
             </label>
             <button type="button" onClick={onSwitchLayout} className="font-bold text-slate-600 underline underline-offset-4 hover:text-navy-900">العودة للشكل السابق</button>
           </div>}
         </div>
-        <div className="no-print flex flex-wrap items-end gap-3">
+        <div className="no-print grid grid-cols-[96px_minmax(0,1fr)] items-end gap-2 sm:flex sm:flex-wrap sm:gap-3">
           <label className="flex flex-col gap-1 text-xs font-bold text-slate-600">دورة التقييم
-            <select value={currentYear} onChange={e => setYearContext(Number(e.target.value))} className="min-h-[44px] min-w-[120px] rounded-xl border border-slate-300 bg-white px-3 text-[15px] font-bold text-navy-900">
+            <select value={currentYear} onChange={e => setYearContext(Number(e.target.value))} className="min-h-[44px] w-full rounded-xl border border-slate-300 bg-white px-2 text-[15px] font-bold text-navy-900 sm:min-w-[120px] sm:px-3">
               {years.map(y => <option key={y} value={y}>{y}</option>)}
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-xs font-bold text-slate-600">المؤسسة
-            <select value={currentWaqfId || ''} onChange={e => setWaqfContext(e.target.value)} className="min-h-[44px] min-w-[220px] max-w-[320px] rounded-xl border border-slate-300 bg-white px-3 text-[15px] font-bold text-navy-900">
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-bold text-slate-600">المؤسسة
+            <select value={currentWaqfId || ''} onChange={e => setWaqfContext(e.target.value)} className="min-h-[44px] w-full min-w-0 rounded-xl border border-slate-300 bg-white px-2 text-[15px] font-bold text-navy-900 sm:min-w-[220px] sm:max-w-[320px] sm:px-3">
               <option value="">جميع المؤسسات</option>
               {src.institutions.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
             </select>
           </label>
-          <button type="button" onClick={() => window.print()} className="inline-flex min-h-[44px] items-center gap-2 rounded-xl bg-navy-900 px-[18px] text-[15px] font-bold text-white hover:bg-navy-800">
+          <button type="button" onClick={() => window.print()} className="hidden min-h-[44px] items-center gap-2 rounded-xl bg-navy-900 px-[18px] text-[15px] font-bold text-white hover:bg-navy-800 sm:inline-flex">
             <Printer size={18} aria-hidden="true" /> ملخص للعرض
           </button>
         </div>
+        {onSwitchLayout && (
+          <details className="no-print rounded-xl border border-slate-200 bg-white px-3 text-sm sm:hidden">
+            <summary className="flex min-h-[44px] cursor-pointer items-center font-bold text-slate-600">خيارات العرض</summary>
+            <div className="flex flex-col gap-3 pb-3">
+              <label className="flex cursor-pointer items-center gap-2 font-bold text-amber-800">
+                <input type="checkbox" role="switch" checked={demoMode} onChange={toggleDemo} className="h-5 w-5 accent-amber-600" /> وضع العرض التوضيحي
+              </label>
+              <button type="button" onClick={onSwitchLayout} className="self-start font-bold text-slate-600 underline underline-offset-4">العودة للشكل السابق</button>
+            </div>
+          </details>
+        )}
       </header>
 
       {/* 1. حجم القطاع */}
@@ -225,7 +239,8 @@ const DashboardInner: React.FC<{ onSwitchLayout?: () => void }> = ({ onSwitchLay
               {m.curve.hasDeadline && <span className="flex items-center gap-1.5"><span className="w-[18px] border-t-2 border-dashed border-red-700" />الموعد النهائي</span>}
             </div>
           </div>
-          <div className="overflow-x-auto"><ProgressCurve {...m.curve} /></div>
+          <div className="-mx-1 overflow-x-auto px-1"><ProgressCurve {...m.curve} /></div>
+          <p className="m-0 text-xs text-slate-500 sm:hidden">اسحب المنحنى جانبياً لرؤية كامل الفترة</p>
         </Card>
       </section>
 
