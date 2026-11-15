@@ -82,29 +82,33 @@ const InstitutionHome: React.FC = () => {
 
   const status = WORKFLOW_STATUS_META[journey.workflowStatus];
   const stepCount = journey.completed.length;
+  // الزر الرئيسي: الخطوة التالية المطلوبة من المؤسسة
+  const ws = journey.workflowStatus;
+  const nextStep = JOURNEY_STEPS[journey.currentIndex];
+  const cta = ws === 'approved' ? { label: 'عرض تقرير التقييم المعتمد', to: '/reports' }
+    : ws === 'submitted' ? { label: 'تحديث تنفيذ خطة التحسين', to: '/improvements' }
+    : ws === 'returned' ? { label: 'تعديل التقييم وإعادة رفعه', to: '/review-submit' }
+    : { label: `${journey.completedCount === 0 ? 'ابدأ' : 'أكمل'} الخطوة ${journey.currentIndex + 1}: ${nextStep.title}`, to: nextStep.path };
 
   return (
     <main className="mx-auto max-w-6xl space-y-7 pb-10" dir="rtl">
-      <section className="relative isolate overflow-hidden rounded-[1.75rem] bg-[#173d45] px-6 py-8 text-white shadow-lg sm:px-9 sm:py-10">
+      <section className="relative isolate overflow-hidden rounded-[1.75rem] bg-[#173d45] px-6 py-6 text-white shadow-lg sm:px-9 sm:py-7">
         <div className="absolute -left-16 -top-20 -z-10 h-64 w-64 rounded-full border-[38px] border-white/[0.06]" />
         <div className="absolute -bottom-28 right-1/3 -z-10 h-64 w-64 rounded-full bg-[#c8a86a]/10 blur-2xl" />
         <div className="relative flex flex-col justify-between gap-8 md:flex-row md:items-end">
           <div className="max-w-2xl">
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-teal-100">
-              <Sparkles size={14} /> بوابة تقييم المؤسسات الوقفية · {CURRENT_YEAR}
-            </div>
-            <p className="mb-2 text-sm text-teal-100/80">مرحباً بكم</p>
-            <h1 className="text-2xl font-extrabold leading-tight tracking-tight sm:text-4xl">{institution.name}</h1>
-            <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-white/75">
+            <p className="mb-1 text-sm text-teal-100/80">مرحباً بكم · تقييم {CURRENT_YEAR}</p>
+            <h1 className="text-2xl font-extrabold leading-tight tracking-tight sm:text-3xl">{institution.name}</h1>
+            <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-white/75">
               <span className="inline-flex items-center gap-2"><Building2 size={16} />{institution.type}</span>
               <span className="inline-flex items-center gap-2"><MapPin size={16} />{[institution.governorate, institution.wilayat].filter(Boolean).join(' · ') || 'الموقع غير محدد'}</span>
             </div>
           </div>
           <button
-            onClick={() => navigate('/institutions')}
-            className="inline-flex shrink-0 items-center justify-center gap-2 self-start rounded-xl bg-[#e3c78d] px-5 py-3 text-sm font-extrabold text-[#263b38] shadow-sm transition hover:bg-[#f0d8a5] active:scale-[.98] md:self-auto"
+            onClick={() => navigate(cta.to)}
+            className="inline-flex min-h-[52px] shrink-0 items-center justify-center gap-2 self-start rounded-xl bg-[#e3c78d] px-6 text-base font-extrabold text-[#263b38] shadow-md transition hover:bg-[#f0d8a5] active:scale-[.98] md:self-auto"
           >
-            <FileText size={17} /> تعديل البيانات
+            {cta.label} <ArrowLeft size={19} aria-hidden="true" />
           </button>
         </div>
       </section>

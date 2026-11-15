@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { StepBar, StepFooter } from '../components/StepNav';
 import { getInstitutions, saveInstitution, deleteInstitution, generateId, getInstitutionProgress, uploadFile, deleteFile } from '../services/db';
 import AttachmentLink, { ATTACHMENT_ACCEPT } from '../components/AttachmentLink';
 import { Institution, InstitutionType, InstitutionDocument } from '../types';
@@ -32,8 +33,15 @@ const Institutions: React.FC = () => {
       return progress.isLocked; 
   }, [formData.id]);
 
+  // المؤسسة ترى نموذج بياناتها مباشرة (بدون جدول)
+  const inline = role === 'user';
   useEffect(() => {
-    setList(getInstitutions());
+    const all = getInstitutions();
+    setList(all);
+    if (role === 'user' && currentWaqfId) {
+      const own = all.find(i => i.id === currentWaqfId);
+      if (own) openEdit(own);
+    }
   }, []);
 
   // Check if current user profile is incomplete
@@ -136,20 +144,13 @@ const Institutions: React.FC = () => {
     }
 
     setList(getInstitutions());
-    setShowForm(false);
-    setFormData({});
+    if (role !== 'user') { setShowForm(false); setFormData({}); }
     
-    // تحديث السياق وإعطاء صلاحية الدخول للمؤسسة
+    // تحديث السياق والانتقال للخطوة التالية
     if (role === 'user') {
         setWaqfContext(newInst.id);
-        if (isCurrentProfileIncomplete) {
-            showToast('تم حفظ البيانات. جاري الانتقال للخطوة التالية...', 'success');
-            setTimeout(() => {
-                navigate('/financial-reports');
-            }, 1000);
-        } else {
-            showToast('تم حفظ بيانات المؤسسة بنجاح', 'success');
-        }
+        showToast('تم حفظ بيانات المؤسسة', 'success');
+        navigate('/financial-reports');
     } else if (role !== 'admin' || !isNew) {
         showToast('تم حفظ بيانات المؤسسة بنجاح', 'success');
     }
@@ -258,8 +259,9 @@ const Institutions: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <StepBar step={0} />
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-navy-900 dark:text-white">{role === 'user' ? 'بيانات المؤسسة' : 'بيانات المؤسسات'}</h2>
+        {!inline && <h2 className="text-2xl font-bold text-navy-900 dark:text-white">بيانات المؤسسات</h2>}
         {role === 'admin' && (
             <button 
             onClick={() => { setFormData({}); setShowForm(true); }}
@@ -270,6 +272,7 @@ const Institutions: React.FC = () => {
         )}
       </div>
 
+      {!inline && (<>
       {/* WARNING BANNER IF PROFILE INCOMPLETE */}
       {isCurrentProfileIncomplete && role === 'user' && (
            <div className="bg-red-50 border-r-4 border-red-500 p-4 rounded-lg shadow-sm animate-pulse">
@@ -451,9 +454,11 @@ const Institutions: React.FC = () => {
         </div>
       )}
 
+      </>)}
+
       {showForm && (
-        <div className="fixed inset-0 bg-navy-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4">
-          <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto animate-scaleIn shadow-2xl relative border-4 border-white">
+        <div className={inline ? '' : 'fixed inset-0 bg-navy-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4'}>
+          <div className={inline ? 'bg-white rounded-3xl w-full shadow-sm border border-gray-200 relative' : 'bg-white rounded-2xl sm:rounded-3xl w-full max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto animate-scaleIn shadow-2xl relative border-4 border-white'}>
             
             {/* STYLISH HEADER */}
             <div className="relative bg-navy-900 p-5 sm:p-8 overflow-hidden rounded-t-[16px] sm:rounded-t-[20px]">
@@ -475,9 +480,9 @@ const Institutions: React.FC = () => {
                         </div>
                         <p className="text-blue-200 text-xs sm:text-sm">يرجى تعبئة كافة البيانات بدقة لضمان سير عملية التقييم.</p>
                     </div>
-                    <button onClick={() => setShowForm(false)} className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-full transition-colors shrink-0">
+                    {!inline && <button onClick={() => setShowForm(false)} className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-full transition-colors shrink-0" aria-label="إغلاق">
                         <X size={22} />
-                    </button>
+                    </button>}
                 </div>
             </div>
 
@@ -491,7 +496,7 @@ const Institutions: React.FC = () => {
                 ) : (
                     <div className="bg-amber-50 border-r-4 border-amber-500 p-4 rounded-lg mb-8 flex gap-3 shadow-sm">
                         <AlertCircle className="w-6 h-6 text-amber-600 shrink-0" />
-                        <p className="text-sm text-amber-800 font-medium">تنبيه: لن تتمكن من الدخول إلى صفحة "الأداء المؤسسي" إلا بعد تعبئة وحفظ كافة البيانات في هذا النموذج.</p>
+                        <p className="text-sm text-amber-800 font-medium">تُفتح الخطوات التالية بعد تعبئة الحقول المطلوبة (*) وحفظها.</p>
                     </div>
                 )}
 
@@ -759,14 +764,22 @@ const Institutions: React.FC = () => {
                 </div>
 
                 {/* FOOTER ACTIONS */}
+                {inline ? (
+                <div className="lg:col-span-3 -mx-4 -mb-4">
+                    {isFormLocked
+                      ? <StepFooter step={0} />
+                      : <StepFooter step={0} primaryType="submit" primaryLabel="حفظ والانتقال إلى: القوائم المالية" />}
+                </div>
+                ) : (
                 <div className="lg:col-span-3 flex justify-end gap-4 pt-6 mt-4 border-t border-gray-100 sticky bottom-0 bg-white/80 backdrop-blur-sm p-4 -mx-4 -mb-4">
                     <button type="button" onClick={() => setShowForm(false)} className="px-6 py-3 text-gray-600 hover:bg-gray-100 rounded-xl font-bold transition-colors">إغلاق</button>
                     {!isFormLocked && (
                         <button type="submit" className="px-8 py-3 bg-gradient-to-r from-navy-800 to-navy-700 text-white rounded-xl hover:shadow-lg hover:-translate-y-0.5 transition-all active:scale-95 font-bold flex items-center gap-2">
-                            <CheckCircle2 size={20} /> حفظ واعتماد البيانات
+                            <CheckCircle2 size={20} /> حفظ البيانات
                         </button>
                     )}
                 </div>
+                )}
 
                 </form>
             </div>

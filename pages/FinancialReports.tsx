@@ -1,6 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useUi } from '../contexts/UiContext';
+import { useNavigate } from 'react-router-dom';
+import { StepBar, StepFooter } from '../components/StepNav';
 import { getInstitutions, saveFinancialRecord, getFinancialRecords, analyzeFinancialHealth, generateId, getInstitutionProgress, uploadFile, deleteFile } from '../services/db';
 import AttachmentLink, { ATTACHMENT_ACCEPT } from '../components/AttachmentLink';
 import { FinancialRecord, InstitutionDocument } from '../types';
@@ -12,8 +14,10 @@ import {
 } from 'lucide-react';
 
 const FinancialReports: React.FC = () => {
-  const { currentWaqfId, showToast, currentYear } = useUi();
+  const { currentWaqfId, showToast, currentYear, role } = useUi();
   const [loading, setLoading] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const navigate = useNavigate();
   const [institutions, setInstitutions] = useState<any[]>([]);
   
   // Lock state
@@ -168,8 +172,15 @@ const FinancialReports: React.FC = () => {
       saveFinancialRecord(fullRecord);
       setAnalysisResult(analysis);
       setLoading(false);
-      
-      showToast('تم حفظ البيانات المالية بنجاح', 'success');
+      setJustSaved(!analysis.errors?.length);
+
+      // بلا أخطاء ولا تنبيهات: انتقال مباشر للخطوة التالية؛ وإلا تبقى الصفحة لعرض الملاحظات
+      if (!analysis.errors?.length && !analysis.flags?.length && role === 'user') {
+          showToast('تم حفظ البيانات المالية', 'success');
+          navigate('/evaluation');
+      } else {
+          showToast(analysis.errors?.length ? 'تم الحفظ، راجع الأخطاء الموضحة أدناه' : 'تم الحفظ مع ملاحظات موضحة أدناه', analysis.errors?.length ? 'error' : 'info');
+      }
   };
 
   const currentInstitutionName = institutions.find(i => i.id === currentWaqfId)?.name;
@@ -184,6 +195,7 @@ const FinancialReports: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto space-y-8 pb-20 animate-fadeIn">
+      <StepBar step={1} />
       
       {/* Header Section */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-200 pb-6">
@@ -430,6 +442,13 @@ const FinancialReports: React.FC = () => {
       </div>
 
       {/* Action Bar */}
+      {role === 'user' ? (
+        isLocked || justSaved
+          ? <StepFooter step={1} />
+          : <StepFooter step={1} onPrimary={handleSubmit} disabled={loading || !isConfirmed}
+              primaryLabel={loading ? 'جاري الحفظ...' : 'حفظ والانتقال إلى: الأداء المؤسسي'}
+              hint={!isConfirmed ? 'أكّد صحة البيانات أولاً' : undefined} />
+      ) : (
       <div className="flex justify-end pt-4 border-t border-gray-200">
           {!isLocked && (
             <button 
@@ -437,10 +456,11 @@ const FinancialReports: React.FC = () => {
                 onClick={handleSubmit}
                 className={`flex items-center gap-2 px-8 py-3 rounded-xl font-bold text-white shadow-lg transition-transform active:scale-95 ${loading || !isConfirmed ? 'bg-gray-400 cursor-not-allowed' : 'bg-navy-800 hover:bg-navy-900'}`}
             >
-                <Save size={20} /> {loading ? 'جاري الحفظ...' : 'حفظ وإرسال البيانات المالية'}
+                <Save size={20} /> {loading ? 'جاري الحفظ...' : 'حفظ البيانات المالية'}
             </button>
           )}
       </div>
+      )}
 
     </div>
   );

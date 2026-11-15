@@ -15,6 +15,7 @@ import {
     Save, Download, RefreshCw, Paperclip, FileText, X, GripVertical
 } from 'lucide-react';
 import { useUi } from '../contexts/UiContext';
+import { StepBar, StepFooter } from '../components/StepNav';
 
 // Declare html2pdf for TypeScript
 declare const html2pdf: any;
@@ -43,6 +44,7 @@ const Improvements: React.FC = () => {
   useEffect(() => {
     setInstitutions(getInstitutions());
   }, []);
+  const totalItems = columns.ToDo.length + columns.Doing.length + columns.Done.length;
 
   const loadImprovements = useCallback(() => {
       if (!currentWaqfId) {
@@ -330,6 +332,7 @@ const Improvements: React.FC = () => {
 
   return (
     <div className="space-y-6 min-h-screen">
+      <StepBar step={4} />
       <div className="flex justify-between items-center no-print">
         <h2 className="text-2xl font-bold text-navy-900 dark:text-white flex items-center gap-2">
             <Layout className="text-teal-600"/> لوحة متابعة التحسين
@@ -452,6 +455,8 @@ const Improvements: React.FC = () => {
             </KanbanColumn>
         </div>
       )}
+      <StepFooter step={4} primaryLabel={planLocked ? undefined : 'إنهاء الخطة والانتقال إلى: المراجعة والإرسال'}
+        disabled={totalItems === 0} hint={totalItems === 0 ? 'أضف بنداً واحداً على الأقل' : undefined} />
     </div>
   );
 };

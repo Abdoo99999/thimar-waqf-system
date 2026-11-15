@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import { StepBar } from '../components/StepNav';
 import {
   getInstitutions, saveComplianceRecord, generateId, getComplianceByInstAndYear,
   getRisks, saveRisk, deleteRisk, getInstitutionProgress, uploadFile,
@@ -12,7 +13,7 @@ import {
   OBLIGATION_GROUPS, RISK_LIBRARY, RISK_CATEGORY_LABEL, RISK_LEVEL_LABEL, riskLevel,
   getAutoChecks, normalizeRecord, withLegacyFields, summarizeCompliance, AutoCheck, RiskLevel,
 } from '../utils/compliance';
-import { Lock, Upload, FileText, Plus, X, Building } from 'lucide-react';
+import { Lock, Upload, FileText, Plus, X, Building, ArrowLeft } from 'lucide-react';
 
 // ─── ألوان التصميم المعتمد ──────────────────────────────────────────────────
 const BTN = 'rounded-lg px-3.5 py-2 text-sm font-bold min-h-[44px] min-w-[88px] border transition-colors disabled:cursor-not-allowed';
@@ -276,10 +277,11 @@ const CompliancePage: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6 text-[#0a1929]" dir="rtl">
+      <StepBar step={3} />
       {/* العنوان والتبويبات */}
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <p className="text-[13px] font-bold text-[#0f766e]">الخطوة 4 من 6{institutionName ? ` · ${institutionName}` : ''}</p>
+          {institutionName && <p className="text-[13px] font-bold text-[#0f766e]">{institutionName}</p>}
           <h1 className="flex flex-wrap items-center gap-3 text-[30px] font-extrabold leading-tight">
             الامتثال والمخاطر {CURRENT_YEAR}
             {isLocked && <span className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-3 py-1 text-xs font-bold text-slate-700"><Lock size={12} aria-hidden="true" /> للقراءة فقط</span>}
@@ -574,8 +576,11 @@ const CompliancePage: React.FC = () => {
           {!isLocked && (
             <div className="flex gap-2.5">
               <button type="button" onClick={saveDraft} className="min-h-[44px] rounded-[10px] bg-slate-100 px-5 text-[15px] font-bold hover:bg-slate-200">حفظ كمسودة</button>
-              <button type="button" onClick={saveAndContinue} disabled={saving} className="min-h-[44px] rounded-[10px] bg-[#0f766e] px-6 text-[15px] font-bold text-white hover:bg-[#115e59] disabled:opacity-60">حفظ والانتقال لخطة التحسين</button>
+              <button type="button" onClick={saveAndContinue} disabled={saving} className="inline-flex min-h-[48px] items-center gap-2 rounded-xl bg-teal-700 px-6 text-[15px] font-bold text-white shadow-md hover:bg-teal-800 disabled:opacity-60">حفظ والانتقال إلى: خطة التحسين <ArrowLeft size={18} aria-hidden="true" /></button>
             </div>
+          )}
+          {isLocked && role === 'user' && (
+            <Link to="/improvements" className="inline-flex min-h-[48px] items-center gap-2 rounded-xl bg-teal-700 px-6 text-[15px] font-bold text-white shadow-md hover:bg-teal-800">التالي: خطة التحسين <ArrowLeft size={18} aria-hidden="true" /></Link>
           )}
         </div>
       </div>

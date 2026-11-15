@@ -4,8 +4,10 @@ import { getInstitutions, getIndicators, saveIndicators, getEvaluationByInstAndY
 import AttachmentLink, { ATTACHMENT_ACCEPT } from '../components/AttachmentLink';
 import { Institution, Indicator, Evaluation, Response, InstitutionDocument } from '../types';
 import { CURRENT_YEAR, RATING_COLORS } from '../constants';
-import { Upload, Save, ChevronDown, ChevronUp, Paperclip, FileText, X, PlusCircle, PieChart as PieIcon, Trash2, MinusCircle, Building, SaveAll, Lock, CheckCircle2, Circle, Scale, Briefcase, ShieldCheck, Lightbulb, Globe, Layout, ChevronRight } from 'lucide-react';
+import { Upload, Save, ChevronDown, ChevronUp, Paperclip, FileText, X, PlusCircle, PieChart as PieIcon, Trash2, MinusCircle, Building, SaveAll, Lock, CheckCircle2, Circle, Scale, Briefcase, ShieldCheck, Lightbulb, Globe, Layout, ChevronRight, ArrowLeft } from 'lucide-react';
 import { useUi } from '../contexts/UiContext';
+import { useNavigate, Link } from 'react-router-dom';
+import { StepBar } from '../components/StepNav';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 
 declare const XLSX: any; // SheetJS global
@@ -23,6 +25,7 @@ const AXIS_ICONS: Record<string, any> = {
 const EvaluationPage: React.FC = () => {
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const { showToast, currentWaqfId, role } = useUi();
+  const navigate = useNavigate();
   
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
@@ -98,7 +101,26 @@ const EvaluationPage: React.FC = () => {
       updated_at: new Date().toISOString()
     };
     
-    setResponses(prev => ({ ...prev, [indicatorId]: newResp }));
+    setResponses(prev => {
+      const next = { ...prev, [indicatorId]: newResp };
+      // عند اكتمال المحور المفتوح: يُطوى ويُفتح المحور التالي غير المكتمل
+      const axis = indicators.find(i => i.id === indicatorId)?.axis;
+      if (axis && openAxis === axis) {
+        const axisDone = (ax: string) => indicators.filter(i => i.axis === ax).every(i => next[i.id]?.score);
+        const wasDone = indicators.filter(i => i.axis === axis).every(i => prev[i.id]?.score);
+        if (!wasDone && axisDone(axis)) {
+          const axes: string[] = Array.from(new Set(indicators.map(i => String(i.axis))));
+          const start = axes.indexOf(axis);
+          const nextAxis = [...axes.slice(start + 1), ...axes.slice(0, start)].find(ax => !axisDone(ax));
+          setTimeout(() => {
+            setOpenAxis(nextAxis || null);
+            showToast(nextAxis ? `أكملت محور ${axis}، التالي: ${nextAxis}` : 'أكملت جميع المؤشرات، اضغط «حفظ والانتقال» بالأسفل', 'success');
+            if (nextAxis) document.getElementById(`axis-${axes.indexOf(nextAxis)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 350);
+        }
+      }
+      return next;
+    });
     saveResponse(newResp);
   };
 
@@ -257,7 +279,8 @@ const EvaluationPage: React.FC = () => {
           const updatedEval = { ...evaluation, status: 'final' as const };
           setEvaluation(updatedEval);
           saveEvaluation(updatedEval);
-          showToast('تم اعتماد الأداء المؤسسي النهائي بنجاح', 'success');
+          showToast('تم حفظ الأداء المؤسسي', 'success');
+          if (role === 'user') navigate('/compliance');
       }
   };
 
@@ -271,6 +294,12 @@ const EvaluationPage: React.FC = () => {
   }, [indicators]);
   
   const availableAxes = Object.keys(grouped);
+  // ترقيم متسلسل حسب ترتيب العرض (1..ن) بدل ترتيب الإدخال
+  const seqNum = useMemo(() => {
+    const m: Record<string, number> = {}; let n = 0;
+    availableAxes.forEach(ax => grouped[ax].forEach(ind => { m[ind.id] = ++n; }));
+    return m;
+  }, [grouped]);
 
   const responseValues = Object.values(responses) as Response[];
   const performanceData = [
@@ -289,6 +318,7 @@ const EvaluationPage: React.FC = () => {
 
   return (
     <div className="space-y-8 relative pb-24">
+      <StepBar step={2} />
       
       {/* HEADER SECTION */}
       <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
@@ -378,7 +408,7 @@ const EvaluationPage: React.FC = () => {
             const AxisIcon = AXIS_ICONS[axis] || AXIS_ICONS['default'];
 
             return (
-                <div key={axis} className={`bg-white rounded-2xl border transition-all duration-300 shadow-sm overflow-hidden ${isAxisComplete ? 'border-teal-200' : 'border-gray-200 hover:shadow-md'}`}>
+                <div key={axis} id={`axis-${idx}`} className={`scroll-mt-4 bg-white rounded-2xl border transition-all duration-300 shadow-sm overflow-hidden ${isAxisComplete ? 'border-teal-200' : 'border-gray-200 hover:shadow-md'}`}>
                     
                     {/* AXIS HEADER */}
                     <button 
@@ -428,7 +458,7 @@ const EvaluationPage: React.FC = () => {
                     {isOpen && (
                         <div className="border-t border-gray-100 bg-white">
                             {axisIndicators.map((ind, i) => {
-                                const globalIndex = indicators.findIndex(x => x.id === ind.id) + 1;
+                                const globalIndex = seqNum[ind.id];
                                 const currentScore = responses[ind.id]?.score;
 
                                 return (
@@ -539,15 +569,18 @@ const EvaluationPage: React.FC = () => {
                  </label>
 
                  {!isLocked && (
-                    <button onClick={() => showToast('تم حفظ التغييرات كمسودة', 'info')} className="bg-gray-100 hover:bg-gray-200 text-navy-800 px-4 py-2.5 rounded-xl flex items-center gap-2 font-bold text-sm transition-all">
-                        <SaveAll size={18} /> <span className="hidden sm:inline">مسودة</span>
-                    </button>
+                    <span className="hidden items-center gap-1.5 text-xs font-bold text-slate-500 sm:inline-flex"><SaveAll size={15} aria-hidden="true" /> يُحفظ تلقائياً</span>
                  )}
 
                  {!isLocked && (
-                    <button onClick={handleFinalSave} className="bg-gradient-to-r from-teal-600 to-teal-700 text-white px-6 py-2.5 rounded-xl flex items-center gap-2 hover:shadow-lg hover:-translate-y-0.5 transition-all font-bold text-sm">
-                        <Save size={18} /> حفظ واعتماد
+                    <button onClick={handleFinalSave} className="bg-teal-700 hover:bg-teal-800 text-white px-6 min-h-[48px] rounded-xl flex items-center gap-2 shadow-md transition font-bold text-[15px]">
+                        {role === 'user' ? <>حفظ والانتقال إلى: الامتثال والمخاطر <ArrowLeft size={18} aria-hidden="true" /></> : <><Save size={18} /> حفظ وإنهاء التقييم</>}
                     </button>
+                 )}
+                 {isLocked && role === 'user' && (
+                    <Link to="/compliance" className="bg-teal-700 hover:bg-teal-800 text-white px-6 min-h-[48px] rounded-xl flex items-center gap-2 shadow-md transition font-bold text-[15px]">
+                        التالي: الامتثال والمخاطر <ArrowLeft size={18} aria-hidden="true" />
+                    </Link>
                  )}
              </div>
           </div>

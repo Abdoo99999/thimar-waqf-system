@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DeadlineNotice from '../components/DeadlineNotice';
 import { useUi } from '../contexts/UiContext';
+import { StepBar } from '../components/StepNav';
 import {
   getEvaluationByInstAndYear, saveEvaluation, getResponses, getComplianceByInstAndYear,
   getRisks, getImprovements, getFinancialRecords, getInstitutions,
@@ -93,6 +94,7 @@ const ReviewSubmit: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-20" dir="rtl">
+      <StepBar step={5} />
       <h2 className="text-2xl font-bold text-navy-900">المراجعة والإرسال</h2>
 
       <DeadlineNotice done={status === 'submitted' || status === 'approved'} />
