@@ -67,10 +67,11 @@ const Accounts: React.FC = () => {
   const getInstName = (instId: string) => institutions.find(i => i.id === instId)?.name ?? 'غير محدد';
 
   const handleReset = async (instId: string) => {
-    try { await resetInstitution(instId); } catch (e: any) { showToast(e?.message || 'تعذرت الإعادة', 'error'); return; }
+    try { await resetInstitution(instId); } catch (e: any) { showToast(e?.message || 'تعذر مسح البيانات', 'error'); return; }
     setInstitutions(getInstitutions());
     setConfirmResetId(null);
     setResetDone(instId);
+    showToast(`تم مسح بيانات ${getInstName(instId)}`, 'success');
     setTimeout(() => setResetDone(null), 2500);
   };
 
@@ -120,10 +121,10 @@ const Accounts: React.FC = () => {
                   <button disabled={busy} onClick={() => handleNewPassword(acc.institution_id)} className="min-h-[44px] flex-1 rounded-lg border border-navy-200 bg-white px-1 text-navy-800 text-[13px] font-bold whitespace-nowrap disabled:opacity-50">كلمة عشوائية</button>
                   <button disabled={busy} onClick={() => { setPwFor(acc.institution_id); setPwValue(''); }} className="min-h-[44px] flex-1 rounded-lg border border-navy-200 bg-white px-1 text-navy-800 text-[13px] font-bold whitespace-nowrap disabled:opacity-50">تعيين كلمة</button>
                   {resetDone === acc.institution_id ? (
-                    <span className="min-h-[44px] flex-1 flex items-center justify-center gap-1 text-green-600 text-sm font-bold"><CheckCircle size={14} /> تم الإعادة</span>
+                    <span className="min-h-[44px] flex-1 flex items-center justify-center gap-1 text-green-600 text-sm font-bold"><CheckCircle size={14} /> تم المسح</span>
                   ) : (
                     <button onClick={() => setConfirmResetId(acc.institution_id)} className="min-h-[44px] flex-1 inline-flex items-center justify-center gap-1 rounded-lg px-1 text-[13px] font-bold whitespace-nowrap text-orange-600 bg-orange-50 border border-orange-200">
-                      <RotateCcw size={14} /> تصفير
+                      <RotateCcw size={14} /> مسح البيانات
                     </button>
                   )}
                 </div>
@@ -140,7 +141,7 @@ const Accounts: React.FC = () => {
                   <th className="px-4 py-3 text-right font-bold">اسم المؤسسة</th>
                   <th className="px-4 py-3 text-center font-bold">رمز الدخول</th>
                   <th className="px-4 py-3 text-center font-bold">كلمة المرور</th>
-                  <th className="px-4 py-3 text-center font-bold">إعادة التعيين</th>
+                  <th className="px-4 py-3 text-center font-bold">مسح بيانات التجربة</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -172,15 +173,15 @@ const Accounts: React.FC = () => {
                     <td className="px-4 py-3 text-center">
                       {resetDone === acc.institution_id ? (
                         <span className="flex items-center justify-center gap-1 text-green-600 text-xs font-bold">
-                          <CheckCircle size={14} /> تم الإعادة
+                          <CheckCircle size={14} /> تم المسح
                         </span>
                       ) : (
                         <button
                           onClick={() => setConfirmResetId(acc.institution_id)}
-                          title="إعادة تعيين بيانات المؤسسة"
+                          title="مسح كل ما عبّأته المؤسسة"
                           className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 transition-colors"
                         >
-                          <RotateCcw size={13} /> إعادة تعيين
+                          <RotateCcw size={13} /> مسح البيانات
                         </button>
                       )}
                     </td>
@@ -200,7 +201,7 @@ const Accounts: React.FC = () => {
                     <AlertTriangle size={24} className="text-orange-500" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-gray-900">تأكيد إعادة التعيين</h3>
+                    <h3 className="text-lg font-bold text-gray-900">مسح كل بيانات المؤسسة؟</h3>
                     <p className="text-sm text-gray-500">{getInstName(confirmResetId)}</p>
                   </div>
                 </div>
@@ -212,16 +213,17 @@ const Accounts: React.FC = () => {
                   <li>القوائم المالية</li>
                   <li>الأداء المؤسسي والاستجابات</li>
                   <li>الامتثال وسجل المخاطر</li>
+                  <li>خطة التحسين والمرفقات والاعتماد والتقرير</li>
                 </ul>
                 <p className="text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 mb-5">
-                  ستتمكن المؤسسة من تجربة النظام من البداية. هذا الإجراء لا يمكن التراجع عنه.
+                  يبقى اسم المؤسسة ورمز الدخول وكلمة المرور كما هي، وتجد المؤسسة ملفها فارغاً وتبدأ من الخطوة الأولى. لا يمكن التراجع عن المسح.
                 </p>
                 <div className="flex gap-3">
                   <button
                     onClick={() => handleReset(confirmResetId)}
                     className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2"
                   >
-                    <RotateCcw size={16} /> نعم، إعادة التعيين
+                    <RotateCcw size={16} /> نعم، امسح البيانات
                   </button>
                   <button
                     onClick={() => setConfirmResetId(null)}
