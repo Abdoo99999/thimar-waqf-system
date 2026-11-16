@@ -95,7 +95,7 @@ const Accounts: React.FC = () => {
   };
 
   return (
-    <div className="p-4 lg:p-8 max-w-5xl mx-auto" dir="rtl">
+    <div className="p-4 lg:p-8 max-w-7xl mx-auto" dir="rtl">
       <div className="flex items-center gap-3 mb-6">
         <div className="p-3 bg-navy-100 rounded-xl"><KeyRound size={28} className="text-navy-800" /></div>
         <h1 className="text-2xl font-bold text-navy-900">حسابات المؤسسات</h1>
@@ -131,7 +131,7 @@ const Accounts: React.FC = () => {
             </label>
           </div>
           {/* الجوال: بطاقات بدل الجدول */}
-          <div className="md:hidden space-y-3">
+          <div className="grid gap-3 md:grid-cols-2 xl:hidden">
             {shown.map(acc => { const di = dataInfo(acc.institution_id); return (
               <div key={acc.institution_id} className={`rounded-xl border bg-white p-4 shadow-sm ${resetDone === acc.institution_id ? 'border-green-300 bg-green-50' : 'border-gray-200'}`}>
                 <div className="flex items-start justify-between gap-2">
@@ -162,25 +162,23 @@ const Accounts: React.FC = () => {
             ); })}
           </div>
 
-          <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+          <div className="hidden xl:block bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[640px]">
+            <table className="w-full text-sm">
               <thead className="bg-navy-900 text-white">
                 <tr>
-                  <th className="px-4 py-3 text-right font-bold">#</th>
-                  <th className="px-4 py-3 text-right font-bold">اسم المؤسسة</th>
-                  <th className="px-4 py-3 text-center font-bold">رمز الدخول</th>
-                  <th className="px-4 py-3 text-center font-bold">كلمة المرور</th>
-                  <th className="px-4 py-3 text-center font-bold">البيانات المعبأة</th>
-                  <th className="px-4 py-3 text-center font-bold whitespace-nowrap">مسح البيانات</th>
+                  <th className="px-3 py-3 text-right font-bold">اسم المؤسسة</th>
+                  <th className="px-3 py-3 text-center font-bold">رمز الدخول</th>
+                  <th className="px-3 py-3 text-center font-bold">كلمة المرور</th>
+                  <th className="px-3 py-3 text-center font-bold">البيانات المعبأة</th>
+                  <th className="px-3 py-3 text-center font-bold whitespace-nowrap">مسح البيانات</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {shown.map((acc, idx) => { const di = dataInfo(acc.institution_id); return (
+                {shown.map(acc => { const di = dataInfo(acc.institution_id); return (
                   <tr key={acc.institution_id} className={`hover:bg-gray-50 transition-colors ${resetDone === acc.institution_id ? 'bg-green-50' : ''}`}>
-                    <td className="px-4 py-3 text-gray-400 text-xs">{idx + 1}</td>
-                    <td className="px-4 py-3 font-medium text-navy-900 max-w-xs truncate">{getInstName(acc.institution_id)}</td>
-                    <td className="px-4 py-3 text-center">
+                    <td className="px-3 py-3 font-medium text-navy-900 max-w-xs truncate">{getInstName(acc.institution_id)}</td>
+                    <td className="px-3 py-3 text-center">
                       <div className="flex items-center justify-center gap-1">
                         <span className="font-mono bg-gray-100 px-2 py-1 rounded text-navy-900 font-bold">{acc.login_code}</span>
                         <button onClick={() => copyText(acc.login_code, `code-${acc.institution_id}`)} className="text-gray-400 hover:text-teal-600 transition-colors">
@@ -188,23 +186,23 @@ const Accounts: React.FC = () => {
                         </button>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
+                    <td className="px-3 py-3 text-center">
+                      <div className="flex flex-wrap items-center justify-center gap-1">
                         <span className={`text-xs font-bold px-2 py-1 rounded ${acc.must_change ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-700'}`}>
                           {acc.must_change ? 'مؤقتة (يجب تغييرها)' : 'فعّالة'}
                         </span>
                         <button disabled={busy} onClick={() => handleNewPassword(acc.institution_id)} className="whitespace-nowrap text-xs font-bold text-navy-800 border border-navy-200 bg-white hover:bg-navy-50 px-2 py-1 rounded-lg disabled:opacity-50">
-                          كلمة مرور جديدة
+                          كلمة عشوائية
                         </button>
                         <button disabled={busy} onClick={() => { setPwFor(acc.institution_id); setPwValue(''); }} className="whitespace-nowrap text-xs font-bold text-navy-800 border border-navy-200 bg-white hover:bg-navy-50 px-2 py-1 rounded-lg disabled:opacity-50">
-                          تعيين كلمة مرور
+                          تعيين كلمة
                         </button>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-center">
+                    <td className="px-3 py-3 text-center">
                       <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold ${di.cls}`}>{di.label}</span>
                     </td>
-                    <td className="px-4 py-3 text-center">
+                    <td className="px-3 py-3 text-center">
                       {resetDone === acc.institution_id ? (
                         <span className="flex items-center justify-center gap-1 text-green-600 text-xs font-bold">
                           <CheckCircle size={14} /> تم المسح
