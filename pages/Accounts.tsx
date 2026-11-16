@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { fetchAccounts, resetAccountPassword, setAccountPassword, resetAllPasswords, getInstitutions, resetInstitution, AccountSummary } from '../services/db';
+import { fetchAccounts, resetAccountPassword, setAccountPassword, resetAllPasswords, getInstitutions, resetInstitution, AccountSummary, getEvaluations, getFinancialRecords, getComplianceRecords, getRisks } from '../services/db';
+import { getInstitutionJourney, JOURNEY_STEPS } from '../utils/institutionJourney';
 import { useUi } from '../contexts/UiContext';
 import { Institution } from '../types';
 import { KeyRound, Copy, CheckCircle, RotateCcw, AlertTriangle } from 'lucide-react';
@@ -65,6 +66,24 @@ const Accounts: React.FC = () => {
   };
 
   const getInstName = (instId: string) => institutions.find(i => i.id === instId)?.name ?? 'غير محدد';
+  const [onlyFilled, setOnlyFilled] = useState(false);
+
+  // هل عبّأت المؤسسة شيئاً؟ (لتحديد من يحتاج مسح بيانات التجربة)
+  const dataInfo = (instId: string) => {
+    const inst = institutions.find(i => i.id === instId);
+    // ما أدخله المدير عند إنشاء المؤسسة لا يُحسب؛ المعتبر ما حفظته المؤسسة نفسها
+    const has = !!inst?.profile_completed
+      || getEvaluations().some(e => e.institution_id === instId) || getFinancialRecords(instId).length > 0
+      || getComplianceRecords().some(c => c.institution_id === instId) || getRisks(instId).length > 0;
+    if (!has) return { has, label: 'فارغة', cls: 'bg-gray-100 text-gray-500' };
+    const j = getInstitutionJourney(instId);
+    if (j.workflowStatus === 'approved') return { has, label: 'معتمدة', cls: 'bg-green-100 text-green-800' };
+    if (j.workflowStatus === 'submitted') return { has, label: 'مرفوعة', cls: 'bg-sky-100 text-sky-800' };
+    if (j.workflowStatus === 'returned') return { has, label: 'معادة', cls: 'bg-orange-100 text-orange-800' };
+    return { has, label: j.completedCount ? `${j.completedCount} من ${JOURNEY_STEPS.length} خطوات` : 'بدأت التعبئة', cls: 'bg-amber-100 text-amber-800' };
+  };
+  const filledCount = accounts.filter(a => dataInfo(a.institution_id).has).length;
+  const shown = onlyFilled ? accounts.filter(a => dataInfo(a.institution_id).has) : accounts;
 
   const handleReset = async (instId: string) => {
     try { await resetInstitution(instId); } catch (e: any) { showToast(e?.message || 'تعذر مسح البيانات', 'error'); return; }
@@ -103,11 +122,22 @@ const Accounts: React.FC = () => {
               </div>
             </div>
           )}
+          <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
+            <span className="rounded-full bg-amber-50 px-3 py-1 font-bold text-amber-800">فيها بيانات: {filledCount}</span>
+            <span className="rounded-full bg-gray-100 px-3 py-1 font-bold text-gray-600">فارغة: {accounts.length - filledCount}</span>
+            <label className="mr-auto flex min-h-[44px] cursor-pointer items-center gap-2 font-bold text-navy-800">
+              <input type="checkbox" checked={onlyFilled} onChange={e => setOnlyFilled(e.target.checked)} className="h-5 w-5 accent-teal-600" />
+              عرض المؤسسات التي فيها بيانات فقط
+            </label>
+          </div>
           {/* الجوال: بطاقات بدل الجدول */}
           <div className="md:hidden space-y-3">
-            {accounts.map(acc => (
+            {shown.map(acc => { const di = dataInfo(acc.institution_id); return (
               <div key={acc.institution_id} className={`rounded-xl border bg-white p-4 shadow-sm ${resetDone === acc.institution_id ? 'border-green-300 bg-green-50' : 'border-gray-200'}`}>
-                <p className="font-bold text-navy-900">{getInstName(acc.institution_id)}</p>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-bold text-navy-900">{getInstName(acc.institution_id)}</p>
+                  <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-bold ${di.cls}`}>{di.label}</span>
+                </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <span className="font-mono bg-gray-100 px-2 py-1 rounded text-navy-900 font-bold">{acc.login_code}</span>
                   <button onClick={() => copyText(acc.login_code, `code-${acc.institution_id}`)} aria-label="نسخ رمز الدخول" className="p-2 text-gray-400 hover:text-teal-600">
@@ -123,29 +153,30 @@ const Accounts: React.FC = () => {
                   {resetDone === acc.institution_id ? (
                     <span className="min-h-[44px] flex-1 flex items-center justify-center gap-1 text-green-600 text-sm font-bold"><CheckCircle size={14} /> تم المسح</span>
                   ) : (
-                    <button onClick={() => setConfirmResetId(acc.institution_id)} className="min-h-[44px] flex-1 inline-flex items-center justify-center gap-1 rounded-lg px-1 text-[13px] font-bold whitespace-nowrap text-orange-600 bg-orange-50 border border-orange-200">
+                    <button disabled={!di.has} onClick={() => setConfirmResetId(acc.institution_id)} className="min-h-[44px] flex-1 inline-flex items-center justify-center gap-1 rounded-lg px-1 text-[13px] font-bold whitespace-nowrap text-orange-600 bg-orange-50 border border-orange-200 disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-400">
                       <RotateCcw size={14} /> مسح البيانات
                     </button>
                   )}
                 </div>
               </div>
-            ))}
+            ); })}
           </div>
 
           <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[500px]">
+            <table className="w-full text-sm min-w-[640px]">
               <thead className="bg-navy-900 text-white">
                 <tr>
                   <th className="px-4 py-3 text-right font-bold">#</th>
                   <th className="px-4 py-3 text-right font-bold">اسم المؤسسة</th>
                   <th className="px-4 py-3 text-center font-bold">رمز الدخول</th>
                   <th className="px-4 py-3 text-center font-bold">كلمة المرور</th>
-                  <th className="px-4 py-3 text-center font-bold">مسح بيانات التجربة</th>
+                  <th className="px-4 py-3 text-center font-bold">البيانات المعبأة</th>
+                  <th className="px-4 py-3 text-center font-bold whitespace-nowrap">مسح البيانات</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {accounts.map((acc, idx) => (
+                {shown.map((acc, idx) => { const di = dataInfo(acc.institution_id); return (
                   <tr key={acc.institution_id} className={`hover:bg-gray-50 transition-colors ${resetDone === acc.institution_id ? 'bg-green-50' : ''}`}>
                     <td className="px-4 py-3 text-gray-400 text-xs">{idx + 1}</td>
                     <td className="px-4 py-3 font-medium text-navy-900 max-w-xs truncate">{getInstName(acc.institution_id)}</td>
@@ -162,13 +193,16 @@ const Accounts: React.FC = () => {
                         <span className={`text-xs font-bold px-2 py-1 rounded ${acc.must_change ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-700'}`}>
                           {acc.must_change ? 'مؤقتة (يجب تغييرها)' : 'فعّالة'}
                         </span>
-                        <button disabled={busy} onClick={() => handleNewPassword(acc.institution_id)} className="text-xs font-bold text-navy-800 border border-navy-200 bg-white hover:bg-navy-50 px-2 py-1 rounded-lg disabled:opacity-50">
+                        <button disabled={busy} onClick={() => handleNewPassword(acc.institution_id)} className="whitespace-nowrap text-xs font-bold text-navy-800 border border-navy-200 bg-white hover:bg-navy-50 px-2 py-1 rounded-lg disabled:opacity-50">
                           كلمة مرور جديدة
                         </button>
-                        <button disabled={busy} onClick={() => { setPwFor(acc.institution_id); setPwValue(''); }} className="text-xs font-bold text-navy-800 border border-navy-200 bg-white hover:bg-navy-50 px-2 py-1 rounded-lg disabled:opacity-50">
+                        <button disabled={busy} onClick={() => { setPwFor(acc.institution_id); setPwValue(''); }} className="whitespace-nowrap text-xs font-bold text-navy-800 border border-navy-200 bg-white hover:bg-navy-50 px-2 py-1 rounded-lg disabled:opacity-50">
                           تعيين كلمة مرور
                         </button>
                       </div>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold ${di.cls}`}>{di.label}</span>
                     </td>
                     <td className="px-4 py-3 text-center">
                       {resetDone === acc.institution_id ? (
@@ -177,16 +211,17 @@ const Accounts: React.FC = () => {
                         </span>
                       ) : (
                         <button
+                          disabled={!di.has}
                           onClick={() => setConfirmResetId(acc.institution_id)}
-                          title="مسح كل ما عبّأته المؤسسة"
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 transition-colors"
+                          title={di.has ? 'مسح كل ما عبّأته المؤسسة' : 'لا توجد بيانات لمسحها'}
+                          className="inline-flex whitespace-nowrap items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 transition-colors disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-400"
                         >
                           <RotateCcw size={13} /> مسح البيانات
                         </button>
                       )}
                     </td>
                   </tr>
-                ))}
+                ); })}
               </tbody>
             </table>
             </div>
