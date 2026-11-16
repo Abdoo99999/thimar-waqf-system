@@ -80,35 +80,64 @@ const readCookie = (req, name) => {
   const raw = req.headers.cookie || '';
   for (const part of raw.split(';')) {
     const [k, ...v] = part.trim().split('=');
-    if (k === name) return decodeURIComponent(v.join('='));
+    if (k === name) { try { return decodeURIComponent(v.join('=')); } catch { return null; } }
   }
   return null;
 };
 const setSession = (req, res, payload) => {
-  const token = sign({ ...payload, exp: Date.now() + SESSION_HOURS * 3600 * 1000 });
+  const token = sign({ ...payload, jti: payload.jti || newId(), exp: Date.now() + SESSION_HOURS * 3600 * 1000 });
   const secure = req.secure || req.headers['x-forwarded-proto'] === 'https';
   res.setHeader('Set-Cookie', `${COOKIE}=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_HOURS * 3600}${secure ? '; Secure' : ''}`);
 };
 const clearSession = (res) => res.setHeader('Set-Cookie', `${COOKIE}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`);
 
 // ─── الحد من محاولات الدخول الخاطئة ────────────────────────────────────────
-const attempts = new Map(); // ip|code -> {count, until}
-const MAX_ATTEMPTS = 8, LOCK_MINUTES = 15;
-const isLocked = (key) => { const a = attempts.get(key); return a && a.until && a.until > Date.now(); };
-const recordFail = (key) => {
-  const a = attempts.get(key) || { count: 0, until: 0 };
-  a.count += 1;
-  if (a.count >= MAX_ATTEMPTS) { a.until = Date.now() + LOCK_MINUTES * 60 * 1000; a.count = 0; }
-  attempts.set(key, a);
+// العدّاد في القاعدة (يصمد مع تعدد نسخ الخادم). قفل لكل حساب بصرف النظر عن الجهاز،
+// وقفل أوسع لكل عنوان يجرّب حسابات كثيرة
+const LOCK_MINUTES = 15;
+const LIMITS = { acct: 8, ip: 40, pw: 8 };
+const lockedFor = async (keys) => {
+  const { rows } = await pool.query('SELECT 1 FROM app_login_fails WHERE key = ANY($1) AND until > now() LIMIT 1', [keys]);
+  return rows.length > 0;
 };
+const recordFail = async (key) => {
+  const max = LIMITS[key.split(':')[0]] || 8;
+  await pool.query(
+    `INSERT INTO app_login_fails (key, count, until, updated_at) VALUES ($1, 1, NULL, now())
+     ON CONFLICT (key) DO UPDATE SET
+       count = CASE WHEN app_login_fails.updated_at < now() - interval '${LOCK_MINUTES} minutes' THEN 1 ELSE app_login_fails.count + 1 END,
+       updated_at = now()`, [key]);
+  await pool.query(`UPDATE app_login_fails SET until = now() + interval '${LOCK_MINUTES} minutes', count = 0 WHERE key = $1 AND count >= $2`, [key, max]);
+};
+const clearFails = (key) => pool.query('DELETE FROM app_login_fails WHERE key = $1', [key]);
 const clientIp = (req) => (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '';
+const LOCK_MSG = `محاولات كثيرة. حاول بعد ${LOCK_MINUTES} دقيقة.`;
 
 // ─── التطبيق ───────────────────────────────────────────────────────────────
 const app = express();
 app.set('trust proxy', true);
-const jsonSmall = express.json({ limit: '25mb' });
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  next();
+});
+// حجم الطلب: صغير لكل الطلبات، وأكبر فقط لرفع الملفات والملاحظات (قد تحوي صورة) والاستعادة
+const jsonSmall = express.json({ limit: '2mb' });
+const jsonFiles = express.json({ limit: '15mb' });
 const jsonLarge = express.json({ limit: '1gb' });
-app.use((req, res, next) => (req.path === '/api/admin/import' ? jsonLarge : jsonSmall)(req, res, next));
+app.use((req, res, next) => {
+  const p = req.path;
+  // الطلبات الكبيرة لا تُقرأ إلا من مستخدم مسجّل (والاستعادة من المدير فقط)
+  if (p === '/api/admin/import' || p === '/api/files' || p.startsWith('/api/records/waqf_feedback/')) {
+    const s = SESSION_SECRET ? unsign(readCookie(req, COOKIE)) : null;
+    if (!s || (p === '/api/admin/import' && s.role !== 'admin')) return res.status(401).json({ error: 'غير مسجل الدخول' });
+  }
+  const parser = p === '/api/admin/import' ? jsonLarge
+    : (p === '/api/files' || p.startsWith('/api/records/waqf_feedback/')) ? jsonFiles : jsonSmall;
+  parser(req, res, next);
+});
 
 // السماح فقط بالطلبات من نفس الموقع لعمليات الكتابة (حماية من CSRF)
 app.use('/api', (req, res, next) => {
@@ -145,6 +174,22 @@ const wrap = (fn) => (req, res) => fn(req, res).catch(e => {
   res.status(500).json({ error: 'خطأ في الخادم' });
 });
 
+const DUMMY_HASH = hashPassword(crypto.randomBytes(8).toString('hex'));
+
+// ─── سجل العمليات (للإضافة فقط) ───────────────────────────────────────────
+const actorOf = (s) => !s ? { role: 'guest', id: '', name: '' }
+  : { role: s.role, id: s.role === 'user' ? s.institution_id : s.username, name: s.name || '' };
+const audit = async (req, action, opts = {}) => {
+  try {
+    const a = actorOf(opts.session || req.session);
+    await pool.query(
+      `INSERT INTO app_audit (actor_role, actor_id, actor_name, action, institution_id, collection, record_id, detail, ip)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)`,
+      [a.role, a.id, a.name, action, opts.institution_id ?? null, opts.collection ?? null, opts.record_id ?? null,
+       JSON.stringify(opts.detail || {}), clientIp(req)]);
+  } catch (e) { console.error('audit:', e.message); }
+};
+
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
@@ -152,47 +197,71 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.post('/api/auth/login', wrap(async (req, res) => {
   const code = String(req.body?.code || '').trim().toUpperCase();
   const password = String(req.body?.password || '').trim();
-  const key = `${clientIp(req)}|${code}`;
-  if (isLocked(key)) return res.status(429).json({ error: `محاولات كثيرة. حاول بعد ${LOCK_MINUTES} دقيقة.` });
+  const keys = [`acct:${code}`, `ip:${clientIp(req)}`];
+  if (await lockedFor(keys)) return res.status(429).json({ error: LOCK_MSG });
 
   const { rows } = await pool.query('SELECT * FROM app_accounts WHERE upper(login_code) = $1', [code]);
   const acc = rows[0];
-  if (!acc || !verifyPassword(password, acc.password_hash)) {
-    recordFail(key);
+  // تجزئة وهمية عند غياب الحساب حتى لا يكشف زمن الرد الرموز الصحيحة
+  const ok = verifyPassword(password, acc ? acc.password_hash : DUMMY_HASH) && !!acc;
+  if (!ok) {
+    await recordFail(keys[0]); await recordFail(keys[1]);
+    await audit(req, 'login_failed', { detail: { code } });
     return res.status(401).json({ error: 'رمز الدخول أو كلمة المرور غير صحيحة' });
   }
   const inst = await pool.query("SELECT data FROM app_records WHERE collection = 'waqf_institutions' AND id = $1", [acc.institution_id]);
   if (!inst.rows[0]) return res.status(401).json({ error: 'المؤسسة غير موجودة' });
-  attempts.delete(key);
-  setSession(req, res, { role: 'user', institution_id: acc.institution_id, name: inst.rows[0].data.name, v: acc.session_version });
+  await clearFails(keys[0]);
+  const sess = { role: 'user', institution_id: acc.institution_id, name: inst.rows[0].data.name, v: acc.session_version };
+  setSession(req, res, sess);
+  await audit(req, 'login', { session: sess, institution_id: acc.institution_id });
   res.json({ role: 'user', institution_id: acc.institution_id, name: inst.rows[0].data.name, must_change_password: acc.must_change });
 }));
 
 app.post('/api/auth/admin-login', wrap(async (req, res) => {
   const username = String(req.body?.username || '').trim().toLowerCase();
-  const password = String(req.body?.password || '');
-  const key = `${clientIp(req)}|admin:${username}`;
-  if (isLocked(key)) return res.status(429).json({ error: `محاولات كثيرة. حاول بعد ${LOCK_MINUTES} دقيقة.` });
+  const password = String(req.body?.password || '').trim();
+  const keys = [`acct:admin:${username}`, `ip:${clientIp(req)}`];
+  if (await lockedFor(keys)) return res.status(429).json({ error: LOCK_MSG });
   const { rows } = await pool.query('SELECT * FROM app_admins WHERE username = $1', [username]);
   if (rows[0] && verifyPassword(password, rows[0].password_hash)) {
-    attempts.delete(key);
-    setSession(req, res, { role: 'admin', username, name: 'مدير النظام', v: rows[0].session_version });
+    await clearFails(keys[0]);
+    const sess = { role: 'admin', username, name: 'مدير النظام', v: rows[0].session_version };
+    setSession(req, res, sess);
+    await audit(req, 'login', { session: sess });
     return res.json({ role: 'admin', name: 'مدير النظام' });
   }
   const st = (await pool.query('SELECT * FROM app_staff WHERE username = $1 AND active = true', [username])).rows[0];
-  if (!st || !verifyPassword(password, st.password_hash)) {
-    recordFail(key);
+  if (!verifyPassword(password, st ? st.password_hash : DUMMY_HASH) || !st) {
+    await recordFail(keys[0]); await recordFail(keys[1]);
+    await audit(req, 'login_failed', { detail: { username } });
     return res.status(401).json({ error: 'بيانات الدخول غير صحيحة' });
   }
-  attempts.delete(key);
-  setSession(req, res, { role: st.role, username, name: st.display_name, title: st.title || '', v: st.session_version });
+  await clearFails(keys[0]);
+  const sess = { role: st.role, username, name: st.display_name, title: st.title || '', v: st.session_version };
+  setSession(req, res, sess);
+  await audit(req, 'login', { session: sess });
   res.json({ role: st.role, name: st.display_name, title: st.title || '', must_change_password: st.must_change });
 }));
 
-app.post('/api/auth/logout', (req, res) => { clearSession(res); res.json({ ok: true }); });
+// الخروج يُبطل الجلسة نفسها في الخادم (لا يكفي مسح الكوكي من المتصفح)
+app.post('/api/auth/logout', wrap(async (req, res) => {
+  const s = SESSION_SECRET ? unsign(readCookie(req, COOKIE)) : null;
+  if (s?.jti) {
+    await pool.query('INSERT INTO app_revoked (jti, exp) VALUES ($1, to_timestamp($2 / 1000.0)) ON CONFLICT DO NOTHING', [s.jti, s.exp]);
+    await pool.query('DELETE FROM app_revoked WHERE exp < now()');
+    await audit(req, 'logout', { session: s, institution_id: s.institution_id || null });
+  }
+  clearSession(res);
+  res.json({ ok: true });
+}));
 
 // التحقق من أن الجلسة ما زالت صالحة (تُلغى عند تغيير كلمة المرور)
 const sessionStillValid = async (s) => {
+  if (s.jti) {
+    const r = await pool.query('SELECT 1 FROM app_revoked WHERE jti = $1', [s.jti]);
+    if (r.rows.length) return false;
+  }
   if (s.role === 'admin') {
     const { rows } = await pool.query('SELECT session_version FROM app_admins WHERE username = $1', [s.username]);
     return rows[0] && rows[0].session_version === s.v;
@@ -227,19 +296,26 @@ app.get('/api/auth/me', wrap(async (req, res) => {
 }));
 
 app.post('/api/auth/change-password', requireAuth, wrap(async (req, res) => {
-  const current = String(req.body?.current || '');
-  const next = String(req.body?.next || '');
+  const current = String(req.body?.current || '').trim();
+  const next = String(req.body?.next || '').trim();
   if (next.length < 8) return res.status(400).json({ error: 'كلمة المرور الجديدة يجب ألا تقل عن 8 أحرف' });
   const s = req.session;
   const table = s.role === 'admin' ? 'app_admins' : isStaff(s) ? 'app_staff' : 'app_accounts';
   const where = s.role === 'user' ? 'institution_id' : 'username';
   const whereVal = s.role === 'user' ? s.institution_id : s.username;
+  const pwKey = `pw:${s.role}:${whereVal}`;
+  if (await lockedFor([pwKey])) return res.status(429).json({ error: LOCK_MSG });
   const { rows } = await pool.query(`SELECT password_hash, session_version FROM ${table} WHERE ${where} = $1`, [whereVal]);
-  if (!rows[0] || !verifyPassword(current, rows[0].password_hash)) return res.status(400).json({ error: 'كلمة المرور الحالية غير صحيحة' });
+  if (!rows[0] || !verifyPassword(current, rows[0].password_hash)) {
+    await recordFail(pwKey);
+    return res.status(400).json({ error: 'كلمة المرور الحالية غير صحيحة' });
+  }
+  await clearFails(pwKey);
   if (current === next) return res.status(400).json({ error: 'اختر كلمة مرور مختلفة عن الحالية' });
   const v = rows[0].session_version + 1;
   await pool.query(`UPDATE ${table} SET password_hash = $1, session_version = $2${s.role !== 'admin' ? ', must_change = false' : ''} WHERE ${where} = $3`, [hashPassword(next), v, whereVal]);
-  setSession(req, res, { ...s, v, exp: undefined });
+  setSession(req, res, { ...s, v, jti: undefined, exp: undefined });
+  await audit(req, 'change_password', { institution_id: s.institution_id || null });
   res.json({ ok: true });
 }));
 
@@ -260,15 +336,130 @@ app.get('/api/data', requireAuth, wrap(async (req, res) => {
 }));
 
 // ─── التحقق من صلاحية الكتابة على سجل ─────────────────────────────────────
-const resolveOwner = async (collection, item) => {
+const resolveOwner = async (collection, item, db = pool) => {
   const def = COLLECTIONS[collection];
   if (def.global) return null;
   if (def.owner === 'self') return item.id;
   if (def.owner === 'field') return item.institution_id || null;
   if (def.owner === 'evaluation') {
-    const { rows } = await pool.query("SELECT institution_id FROM app_records WHERE collection = 'waqf_evaluations' AND id = $1", [item.evaluation_id]);
+    const { rows } = await db.query("SELECT institution_id FROM app_records WHERE collection = 'waqf_evaluations' AND id = $1", [item.evaluation_id]);
     return rows[0]?.institution_id || null;
   }
+  return null;
+};
+
+// دورة التقييم الحالية: يحددها المدير من الإعدادات (لا تتبع ساعة أي جهاز)
+const getCycleYear = async (db = pool) => {
+  const { rows } = await db.query("SELECT data->>'current_cycle' AS y FROM app_records WHERE collection = 'waqf_settings' LIMIT 1");
+  const y = Number(rows[0]?.y);
+  return Number.isInteger(y) && y > 2000 && y < 2100 ? y : new Date().getFullYear();
+};
+
+// بيانات المؤسسة تُقفل في الخادم ما دام تقييم الدورة الحالية مرفوعاً أو معتمداً
+const institutionLocked = async (instId, db = pool) => {
+  if (!instId) return false;
+  const year = await getCycleYear(db);
+  const { rows } = await db.query(
+    `SELECT 1 FROM app_records WHERE collection = 'waqf_evaluations' AND institution_id = $1
+     AND data->>'cycle_year' = $2 AND data->>'workflow_status' IN ('submitted', 'approved') LIMIT 1`, [instId, String(year)]);
+  return rows.length > 0;
+};
+
+// حقول تكتبها الوزارة أو الخادم فقط في سجل التقييم
+const MINISTRY_EVAL_FIELDS = ['report_ref', 'ministry_notes', 'approver_name', 'approver_title', 'report_benchmark', 'report_snapshot',
+  'approved_at', 'returned_at', 'admin_feedback', 'submission_date', 'declaration_accepted_at'];
+const copyFields = (item, from, fields) => {
+  for (const f of fields) {
+    if (from && from[f] !== undefined) item[f] = from[f]; else delete item[f];
+  }
+};
+// بعد الرفع تبقى خطة التحسين مفتوحة لتحديث التنفيذ فقط
+const EXEC_FIELDS = ['status', 'notes', 'evidence_doc'];
+const changedOutside = (item, prev, allowed) => {
+  const keys = new Set([...Object.keys(item), ...Object.keys(prev || {})]);
+  return [...keys].filter(k => !allowed.includes(k) && JSON.stringify(item[k]) !== JSON.stringify(prev?.[k]));
+};
+
+// ─── التحقق من المحتوى ────────────────────────────────────────────────────
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+const optNum = (v) => v === undefined || v === null || isNum(v);
+const isYear = (v) => Number.isInteger(v) && v >= 2000 && v <= 2100;
+const validateRecord = async (collection, item, s, db = pool) => {
+  switch (collection) {
+    case 'waqf_responses':
+      if (typeof item.indicator_id !== 'string' || !item.indicator_id) return 'المؤشر غير محدد';
+      if (!Number.isInteger(item.score) || item.score < 0 || item.score > 5) return 'الدرجة يجب أن تكون من 1 إلى 5';
+      break;
+    case 'waqf_evaluations':
+      if (!isYear(item.cycle_year)) return 'سنة الدورة غير صحيحة';
+      break;
+    case 'waqf_financials': {
+      if (!isYear(item.fiscal_year)) return 'السنة المالية غير صحيحة';
+      for (const f of ['total_assets', 'total_liabilities', 'net_waqf_assets', 'total_revenues', 'total_expenses', 'admin_general_expenses', 'surplus_deficit']) {
+        if (!isNum(item[f])) return 'القيم المالية يجب أن تكون أرقاماً';
+      }
+      for (const f of ['total_assets', 'total_liabilities', 'total_revenues', 'total_expenses', 'admin_general_expenses']) {
+        if (item[f] < 0) return 'القيم المالية لا تكون سالبة';
+      }
+      for (const f of ['operating_cash_flow', 'investing_cash_flow', 'financing_cash_flow', 'cash_end_period', 'beneficiary_distributions']) {
+        if (!optNum(item[f])) return 'القيم المالية يجب أن تكون أرقاماً';
+      }
+      if (isNum(item.beneficiary_distributions) && item.beneficiary_distributions < 0) return 'القيم المالية لا تكون سالبة';
+      if (s.role === 'user' && item.status === 'Approved') return 'حالة القوائم غير صالحة';
+      const dup = await db.query(
+        `SELECT 1 FROM app_records WHERE collection = 'waqf_financials' AND institution_id = $1 AND id <> $2 AND data->>'fiscal_year' = $3 LIMIT 1`,
+        [item.institution_id, item.id, String(item.fiscal_year)]);
+      if (dup.rows.length) return `توجد قوائم مالية مسجلة لسنة ${item.fiscal_year}`;
+      break;
+    }
+    case 'waqf_compliance': {
+      if (!isYear(item.cycle_year)) return 'سنة الدورة غير صحيحة';
+      const dup = await db.query(
+        `SELECT 1 FROM app_records WHERE collection = 'waqf_compliance' AND institution_id = $1 AND id <> $2 AND data->>'cycle_year' = $3 LIMIT 1`,
+        [item.institution_id, item.id, String(item.cycle_year)]);
+      if (dup.rows.length) return 'يوجد سجل امتثال لهذه الدورة';
+      break;
+    }
+    case 'waqf_risks':
+      for (const f of ['probability', 'impact']) if (!Number.isInteger(item[f]) || item[f] < 1 || item[f] > 5) return 'الاحتمال والأثر من 1 إلى 5';
+      break;
+    case 'waqf_settings':
+      if (item.current_cycle !== undefined && !isYear(item.current_cycle)) return 'دورة التقييم غير صحيحة';
+      break;
+    case 'waqf_feedback':
+      if (item.image !== undefined && item.image !== null && item.image !== '' && !/^data:image\/(png|jpe?g|gif|webp);base64,/.test(String(item.image))) return 'الصورة غير صالحة';
+      break;
+  }
+  return null;
+};
+
+// شروط رفع التقييم تُفحص في الخادم أيضاً (لا تكفي الواجهة)
+const checkSubmitReady = async (instId, ev, db = pool) => {
+  const y = ev.cycle_year;
+  const get = async (sql, params) => (await db.query(sql, params)).rows;
+  const inst = (await get("SELECT data FROM app_records WHERE collection = 'waqf_institutions' AND id = $1", [instId]))[0]?.data;
+  if (!inst?.profile_completed) return 'أكمل بيانات المؤسسة أولاً';
+  const fin = await get(`SELECT 1 FROM app_records WHERE collection = 'waqf_financials' AND institution_id = $1 AND data->>'fiscal_year' IN ($2, $3) LIMIT 1`, [instId, String(y), String(y - 1)]);
+  if (!fin.length) return 'أدخل القوائم المالية أولاً';
+  if (ev.status !== 'final') return 'أكمل الأداء المؤسسي أولاً';
+  const inds = await get("SELECT data FROM app_records WHERE collection = 'waqf_indicators'", []);
+  const active = inds.map(r => r.data).filter(i => i.active !== false);
+  const resp = new Map((await get("SELECT data FROM app_records WHERE collection = 'waqf_responses' AND data->>'evaluation_id' = $1", [ev.id])).map(r => [r.data.indicator_id, r.data]));
+  if (active.length) {
+    const missing = active.filter(i => !(resp.get(i.id)?.score >= 1));
+    if (missing.length) return `بقي ${missing.length} مؤشر بلا درجة في الأداء المؤسسي`;
+    const noEv = active.filter(i => resp.get(i.id).score >= 4 && !resp.get(i.id).evidence_doc);
+    if (noEv.length) return `${noEv.length} مؤشر بدرجة 4 أو 5 بلا دليل مرفق`;
+  }
+  const comp = (await get(`SELECT data FROM app_records WHERE collection = 'waqf_compliance' AND institution_id = $1 AND data->>'cycle_year' = $2`, [instId, String(y)]))[0]?.data;
+  if (!comp || comp.completed === false) return 'أكمل الامتثال أولاً';
+  const risks = await get("SELECT 1 FROM app_records WHERE collection = 'waqf_risks' AND institution_id = $1 LIMIT 1", [instId]);
+  if (!risks.length) return 'سجّل المخاطر أولاً';
+  const imp = (await get("SELECT data FROM app_records WHERE collection = 'waqf_improvements' AND data->>'evaluation_id' = $1", [ev.id])).map(r => r.data);
+  if (!imp.length && !ev.no_improvements) return 'أضف بنود خطة التحسين، أو أقرّ بعدم وجود بنود';
+  const incomplete = imp.filter(i => !String(i.recommended_action || '').trim() || /^مرتبط بمؤشر رقم/.test(i.recommended_action) || !String(i.owner || '').trim() || !i.due_date);
+  if (incomplete.length) return `أكمل الإجراء والمسؤول والموعد في ${incomplete.length} من بنود خطة التحسين`;
+  if (!String(ev.declarant_name || '').trim()) return 'اكتب اسم المُقِرّ بصحة البيانات';
   return null;
 };
 
@@ -279,61 +470,118 @@ const checkUserWrite = async (s, collection, id, item, existing) => {
   if (owner !== s.institution_id) return 'لا يمكنك تعديل بيانات مؤسسة أخرى';
   if (existing && existing.institution_id !== s.institution_id) return 'لا يمكنك تعديل بيانات مؤسسة أخرى';
   if (collection === 'waqf_institutions' && !existing) return 'لا يمكن للمؤسسة إنشاء مؤسسة جديدة';
+  if (collection === 'waqf_institutions' && existing) {
+    // اسم المؤسسة ونوعها يحددهما المدير
+    item.name = existing.data.name; item.type = existing.data.type;
+  }
   if (collection === 'waqf_feedback') {
     // الرد والحالة من صلاحية المدير فقط؛ المؤسسة تستطيع فقط تعليم الرد كمقروء
-    const ADMIN_FIELDS = ['admin_reply', 'replied_at', 'status', 'is_read'];
     if (existing) {
       const strip = (o) => { const c = { ...o }; delete c.reply_seen; return JSON.stringify(c); };
       if (strip(item) !== strip(existing.data)) return 'لا يمكن تعديل الملاحظة بعد إرسالها';
     } else if (item.admin_reply || item.replied_at || (item.status && item.status !== 'new') || item.is_read) {
       return 'بيانات غير صالحة';
+    } else {
+      const { rows } = await pool.query("SELECT data->>'name' AS n FROM app_records WHERE collection = 'waqf_institutions' AND id = $1", [s.institution_id]);
+      item.institution_name = rows[0]?.n || s.name || '';
     }
+    return null;
   }
+  if (def.owner === 'evaluation' && existing && existing.data?.evaluation_id !== item.evaluation_id) return 'لا يمكن نقل السجل إلى تقييم آخر';
+
   if (collection === 'waqf_evaluations') {
-    const prev = existing?.data?.workflow_status;
-    if (prev === 'submitted' || prev === 'approved') return 'التقييم مرفوع للاعتماد ولا يمكن تعديله';
-    // المؤسسة ترفع فقط (أو تُبقي الحالة كما هي بعد إرجاع التقييم لها)، ولا تعتمد ولا تُرجع
-    if (item.workflow_status && !['draft', 'submitted'].includes(item.workflow_status) && item.workflow_status !== prev) {
-      return 'لا يمكن للمؤسسة اعتماد التقييم';
+    const prev = existing?.data;
+    const ps = prev?.workflow_status || 'draft';
+    if (ps === 'submitted' || ps === 'approved') return 'التقييم مرفوع للاعتماد ولا يمكن تعديله';
+    if (!prev) {
+      const cy = await getCycleYear();
+      if (item.cycle_year !== cy) return `دورة التقييم الحالية ${cy}`;
+      const dup = await pool.query(
+        `SELECT 1 FROM app_records WHERE collection = 'waqf_evaluations' AND institution_id = $1 AND data->>'cycle_year' = $2 LIMIT 1`,
+        [s.institution_id, String(item.cycle_year)]);
+      if (dup.rows.length) return { status: 409, error: 'يوجد تقييم لهذه الدورة. حدّث الصفحة.' };
+    } else if (item.cycle_year !== prev.cycle_year) return 'لا يمكن تغيير سنة الدورة';
+    const ns = item.workflow_status || 'draft';
+    if (!['draft', 'submitted', 'returned'].includes(ns) || (ns === 'returned' && ps !== 'returned') || (ns === 'draft' && ps === 'returned')) {
+      return 'لا يمكن للمؤسسة تغيير حالة التقييم بهذا الشكل';
     }
-    if (item.admin_feedback !== undefined && item.admin_feedback !== existing?.data?.admin_feedback) {
-      return 'لا يمكن للمؤسسة تعديل ملاحظات المراجعة';
+    copyFields(item, prev, MINISTRY_EVAL_FIELDS);
+    if (ns === 'submitted') {
+      const err = await checkSubmitReady(s.institution_id, item);
+      if (err) return err;
+      const now = new Date().toISOString();
+      item.submission_date = now; item.declaration_accepted_at = now;
+      item.declarant_name = String(item.declarant_name).trim().slice(0, 120);
+      item.declarant_title = String(item.declarant_title || '').trim().slice(0, 160);
     }
+    return null;
+  }
+
+  // باقي بيانات المؤسسة: مقفلة ما دام تقييم الدورة مرفوعاً أو معتمداً
+  if (await institutionLocked(s.institution_id)) {
+    if (collection === 'waqf_improvements' && existing && changedOutside(item, existing.data, EXEC_FIELDS).length === 0) return null;
+    return collection === 'waqf_improvements'
+      ? 'بنود الخطة ثابتة بعد الرفع؛ يمكن تحديث حالة التنفيذ والأدلة فقط'
+      : 'التقييم مرفوع للوزارة، ولا يمكن تعديل البيانات حتى تُعيده الوزارة';
   }
   if (def.owner === 'evaluation') {
     const { rows } = await pool.query("SELECT data->>'workflow_status' AS ws FROM app_records WHERE collection = 'waqf_evaluations' AND id = $1", [item.evaluation_id]);
-    if (['submitted', 'approved'].includes(rows[0]?.ws)) {
-      // خطة التحسين تبقى مفتوحة طوال السنة لتحديث التنفيذ فقط (الحالة والملاحظات ودليل الإنجاز)
-      if (collection === 'waqf_improvements' && existing) {
-        const EXEC_FIELDS = ['status', 'notes', 'evidence_doc'];
-        const keys = new Set([...Object.keys(item), ...Object.keys(existing.data || {})]);
-        const changed = [...keys].filter(k => !EXEC_FIELDS.includes(k) && JSON.stringify(item[k]) !== JSON.stringify(existing.data?.[k]));
-        if (changed.length === 0) return null;
-        return 'بنود الخطة معتمدة بعد الرفع؛ يمكن تحديث حالة التنفيذ والأدلة فقط';
-      }
-      return 'التقييم مرفوع للاعتماد ولا يمكن تعديله';
-    }
+    if (['submitted', 'approved'].includes(rows[0]?.ws)) return 'التقييم مرفوع للاعتماد ولا يمكن تعديله';
   }
   return null;
 };
 
 // المعتمِد: يعتمد التقييم المرفوع أو يُرجعه مع ملاحظاته فقط، ولا يعدّل غير ذلك
-const APPROVAL_FIELDS = ['workflow_status', 'approved_at', 'returned_at', 'report_ref', 'report_benchmark', 'ministry_notes', 'approver_name', 'approver_title', 'admin_feedback'];
+const APPROVAL_FIELDS = ['workflow_status', 'approved_at', 'returned_at', 'report_ref', 'report_benchmark', 'report_snapshot', 'ministry_notes', 'approver_name', 'approver_title', 'admin_feedback'];
 const checkStaffWrite = (s, collection, item, existing) => {
   if (s.role !== 'approver') return 'صلاحيتك للاطلاع فقط';
   if (collection !== 'waqf_evaluations' || !existing) return 'صلاحية المعتمِد تقتصر على اعتماد التقييمات';
-  if (existing.data?.workflow_status !== 'submitted') return 'يمكن اعتماد أو إرجاع التقييمات المرفوعة فقط';
+  if (existing.data?.workflow_status !== 'submitted') return { status: 409, error: 'الطلب لم يعد بانتظار الاعتماد. حدّث الصفحة.' };
   if (!['approved', 'returned'].includes(item.workflow_status)) return 'إجراء غير مسموح';
-  const keys = new Set([...Object.keys(item), ...Object.keys(existing.data || {})]);
-  const changed = [...keys].filter(k => !APPROVAL_FIELDS.includes(k) && JSON.stringify(item[k]) !== JSON.stringify(existing.data?.[k]));
-  if (changed.length) return 'لا يمكن للمعتمِد تعديل بيانات التقييم';
+  if (changedOutside(item, existing.data, APPROVAL_FIELDS).length) return 'لا يمكن للمعتمِد تعديل بيانات التقييم';
   return null;
 };
 
-const getExisting = async (collection, id) => {
-  const { rows } = await pool.query('SELECT institution_id, data FROM app_records WHERE collection = $1 AND id = $2', [collection, id]);
+// انتقال حالة التقييم بيد الوزارة (المدير أو المعتمِد): الاعتماد والإرجاع من «مرفوع» فقط
+const checkMinistryEval = (item, existing) => {
+  const prev = existing?.data;
+  const ps = prev?.workflow_status || 'draft';
+  const ns = item.workflow_status || 'draft';
+  if (prev && ps !== ns) {
+    if (!(ps === 'submitted' && (ns === 'approved' || ns === 'returned'))) {
+      return { status: 409, error: 'تغيرت حالة التقييم أو لم تعد تسمح بهذا الإجراء. حدّث الصفحة.' };
+    }
+    if (ns === 'returned' && !String(item.admin_feedback || '').trim()) return 'اكتب سبب الإعادة';
+    if (ns === 'approved' && (!item.report_snapshot || typeof item.report_snapshot !== 'object')) return 'تعذر حفظ نسخة التقرير. حدّث الصفحة وأعد المحاولة.';
+  } else if (prev && ps === 'approved') {
+    return { status: 409, error: 'التقييم معتمد ولا يمكن تعديله' };
+  }
+  if (!prev && ns !== 'draft') return 'التقييم الجديد يبدأ مسودة';
+  // الحقول التي يكتبها الخادم: التواريخ ورقم المرجع ونسخة التقرير خارج لحظة الاعتماد
+  const keepAlways = ['report_ref', 'approved_at', 'returned_at', 'submission_date', 'declaration_accepted_at'];
+  copyFields(item, prev, ps !== ns ? keepAlways : [...keepAlways, 'report_snapshot', 'report_benchmark']);
+  return null;
+};
+
+const REF_PREFIX = 'و.ش.د/ت.م';
+// رقم المرجع التالي للسنة: يُولّد داخل معاملة مقفلة فلا يتكرر
+const nextReportRef = async (db, year) => {
+  await db.query('SELECT pg_advisory_xact_lock(7340021)');
+  const prefix = `${REF_PREFIX}/${year}/`;
+  const { rows } = await db.query(
+    "SELECT data->>'report_ref' AS r FROM app_records WHERE collection = 'waqf_evaluations' AND data->>'report_ref' LIKE $1", [prefix + '%']);
+  const max = rows.reduce((m, r) => Math.max(m, parseInt(String(r.r).slice(prefix.length), 10) || 0), 0);
+  return `${prefix}${String(max + 1).padStart(4, '0')}`;
+};
+
+const getExisting = async (collection, id, db = pool) => {
+  const { rows } = await db.query('SELECT institution_id, data FROM app_records WHERE collection = $1 AND id = $2', [collection, id]);
   return rows[0] || null;
 };
+
+const deny = (res, err) => typeof err === 'object'
+  ? res.status(err.status || 403).json({ error: err.error })
+  : res.status(403).json({ error: err });
 
 // حفظ سجل واحد
 app.put('/api/records/:collection/:id', requireAuth, wrap(async (req, res) => {
@@ -347,25 +595,65 @@ app.put('/api/records/:collection/:id', requireAuth, wrap(async (req, res) => {
 
   if (isStaff(s)) {
     const err = checkStaffWrite(s, collection, item, existing);
-    if (err) return res.status(403).json({ error: err });
+    if (err) return deny(res, err);
     // اسم المعتمِد ومسماه من حسابه وليس مما يرسله المتصفح
     if (item.workflow_status === 'approved') { item.approver_name = s.name; item.approver_title = s.title || ''; }
   } else if (s.role !== 'admin') {
     const err = await checkUserWrite(s, collection, id, item, existing);
-    if (err) return res.status(403).json({ error: err });
+    if (err) return deny(res, err);
   }
+  if (collection === 'waqf_evaluations' && seesAll(s)) {
+    if (!existing && s.role === 'admin') {
+      const dup = await pool.query(
+        `SELECT 1 FROM app_records WHERE collection = 'waqf_evaluations' AND institution_id = $1 AND data->>'cycle_year' = $2 LIMIT 1`,
+        [item.institution_id, String(item.cycle_year)]);
+      if (dup.rows.length) return res.status(409).json({ error: 'يوجد تقييم لهذه الدورة. حدّث الصفحة.' });
+    }
+    const err = checkMinistryEval(item, existing);
+    if (err) return deny(res, err);
+  }
+  const verr = await validateRecord(collection, item, s);
+  if (verr) return res.status(400).json({ error: verr });
+
   const owner = await resolveOwner(collection, item);
-  await pool.query(
-    `INSERT INTO app_records (collection, id, institution_id, data) VALUES ($1, $2, $3, $4::jsonb)
-     ON CONFLICT (collection, id) DO UPDATE SET data = EXCLUDED.data, institution_id = EXCLUDED.institution_id, updated_at = now()`,
-    [collection, id, owner, JSON.stringify(item)]);
+  const prevStatus = existing?.data?.workflow_status;
+  const transition = collection === 'waqf_evaluations' && (item.workflow_status || 'draft') !== (prevStatus || 'draft');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    if (transition && item.workflow_status === 'approved') {
+      item.approved_at = new Date().toISOString();
+      item.report_ref = existing?.data?.report_ref || await nextReportRef(client, item.cycle_year);
+      delete item.returned_at;
+      if (item.report_snapshot) item.report_snapshot.frozen_at = item.approved_at;
+    }
+    if (transition && item.workflow_status === 'returned') {
+      item.returned_at = new Date().toISOString();
+      delete item.report_snapshot; delete item.report_benchmark;
+    }
+    // ضبط تزامن بسيط: يرفض الحفظ إذا تغيّرت حالة التقييم منذ قراءته
+    if (transition && existing) {
+      const { rows } = await client.query("SELECT data->>'workflow_status' AS ws FROM app_records WHERE collection = 'waqf_evaluations' AND id = $1 FOR UPDATE", [id]);
+      if ((rows[0]?.ws || 'draft') !== (prevStatus || 'draft')) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'تغيرت حالة التقييم. حدّث الصفحة.' }); }
+    }
+    await client.query(
+      `INSERT INTO app_records (collection, id, institution_id, data) VALUES ($1, $2, $3, $4::jsonb)
+       ON CONFLICT (collection, id) DO UPDATE SET data = EXCLUDED.data, institution_id = EXCLUDED.institution_id, updated_at = now()`,
+      [collection, id, owner, JSON.stringify(item)]);
+    await client.query('COMMIT');
+  } catch (e) { await client.query('ROLLBACK').catch(() => {}); throw e; } finally { client.release(); }
 
   // مؤسسة جديدة أضافها المدير: إنشاء حساب دخول بكلمة مرور عشوائية
   let account = null;
   if (collection === 'waqf_institutions' && !existing && s.role === 'admin') {
     account = await createAccount(id);
   }
-  res.json({ ok: true, account });
+  const action = transition ? ({ submitted: 'submit', approved: 'approve', returned: 'return' }[item.workflow_status] || 'update') : existing ? 'update' : 'create';
+  if (collection !== 'waqf_responses') {
+    await audit(req, action, { institution_id: owner, collection, record_id: id,
+      detail: transition ? { from: prevStatus || 'draft', to: item.workflow_status, report_ref: item.report_ref } : {} });
+  }
+  res.json({ ok: true, account, item });
 }));
 
 // حذف سجل واحد
@@ -380,16 +668,37 @@ app.delete('/api/records/:collection/:id', requireAuth, wrap(async (req, res) =>
     if (collection === 'waqf_institutions' || COLLECTIONS[collection].global) return res.status(403).json({ error: 'غير مسموح' });
     if (existing.institution_id !== s.institution_id) return res.status(403).json({ error: 'لا يمكنك حذف بيانات مؤسسة أخرى' });
     if (collection === 'waqf_evaluations') return res.status(403).json({ error: 'غير مسموح' });
+    if (collection !== 'waqf_feedback' && await institutionLocked(s.institution_id)) {
+      return res.status(403).json({ error: 'التقييم مرفوع للوزارة، ولا يمكن الحذف حتى تُعيده الوزارة' });
+    }
     if (COLLECTIONS[collection].owner === 'evaluation') {
       const { rows } = await pool.query("SELECT data->>'workflow_status' AS ws FROM app_records WHERE collection = 'waqf_evaluations' AND id = $1", [existing.data?.evaluation_id]);
       if (['submitted', 'approved'].includes(rows[0]?.ws)) return res.status(403).json({ error: 'التقييم مرفوع للاعتماد ولا يمكن الحذف' });
     }
+  } else {
+    if (collection === 'waqf_evaluations' && existing.data?.workflow_status === 'approved') {
+      return res.status(403).json({ error: 'لا يمكن حذف تقييم معتمد' });
+    }
+    // المؤشرات: لا يُحذف مؤشر عليه إجابات (تنفصل عنه نتائج المؤسسات)
+    if (collection === 'waqf_indicators') {
+      const { rows } = await pool.query("SELECT 1 FROM app_records WHERE collection = 'waqf_responses' AND data->>'indicator_id' = $1 LIMIT 1", [id]);
+      if (rows.length) return res.status(409).json({ error: 'لا يمكن حذف مؤشر عليه إجابات من المؤسسات.' });
+    }
   }
-  await pool.query('DELETE FROM app_records WHERE collection = $1 AND id = $2', [collection, id]);
-  if (collection === 'waqf_institutions') {
-    await pool.query('DELETE FROM app_records WHERE institution_id = $1', [id]);
-    await pool.query('DELETE FROM app_accounts WHERE institution_id = $1', [id]);
-    await pool.query('DELETE FROM app_files WHERE institution_id = $1', [id]);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM app_records WHERE collection = $1 AND id = $2', [collection, id]);
+    if (collection === 'waqf_institutions') {
+      await client.query('DELETE FROM app_records WHERE institution_id = $1', [id]);
+      await client.query('DELETE FROM app_accounts WHERE institution_id = $1', [id]);
+      await client.query('DELETE FROM app_files WHERE institution_id = $1', [id]);
+    }
+    await client.query('COMMIT');
+  } catch (e) { await client.query('ROLLBACK').catch(() => {}); throw e; } finally { client.release(); }
+  if (collection !== 'waqf_responses') {
+    await audit(req, 'delete', { institution_id: existing.institution_id, collection, record_id: id,
+      detail: collection === 'waqf_institutions' ? { name: existing.data?.name } : {} });
   }
   res.json({ ok: true });
 }));
@@ -419,6 +728,7 @@ app.post('/api/admin/staff', requireAdmin, wrap(async (req, res) => {
   if (password.length < 6) return res.status(400).json({ error: 'كلمة المرور 6 أحرف على الأقل' });
   await pool.query('INSERT INTO app_staff (username, password_hash, role, display_name, title, active, must_change) VALUES ($1, $2, $3, $4, $5, true, $6)',
     [username, hashPassword(password), out.role, out.display_name, out.title, !!req.body?.must_change]);
+  await audit(req, 'staff_create', { record_id: username, detail: { role: out.role } });
   res.json({ ok: true });
 }));
 app.put('/api/admin/staff/:username', requireAdmin, wrap(async (req, res) => {
@@ -437,10 +747,12 @@ app.put('/api/admin/staff/:username', requireAdmin, wrap(async (req, res) => {
   vals.push(req.params.username);
   const { rowCount } = await pool.query(`UPDATE app_staff SET ${sets.join(', ')} WHERE username = $${vals.length}`, vals);
   if (!rowCount) return res.status(404).json({ error: 'المستخدم غير موجود' });
+  await audit(req, 'staff_update', { record_id: req.params.username, detail: { fields: Object.keys(out), password: password !== null } });
   res.json({ ok: true });
 }));
 app.delete('/api/admin/staff/:username', requireAdmin, wrap(async (req, res) => {
   await pool.query('DELETE FROM app_staff WHERE username = $1', [req.params.username]);
+  await audit(req, 'staff_delete', { record_id: req.params.username });
   res.json({ ok: true });
 }));
 
@@ -470,6 +782,7 @@ app.post('/api/admin/accounts/:institutionId/reset-password', requireAdmin, wrap
     [hashPassword(password), req.params.institutionId]);
   if (!rowCount) return res.status(404).json({ error: 'الحساب غير موجود' });
   const { rows } = await pool.query('SELECT login_code FROM app_accounts WHERE institution_id = $1', [req.params.institutionId]);
+  await audit(req, 'password_reset', { institution_id: req.params.institutionId });
   res.json({ institution_id: req.params.institutionId, login_code: rows[0].login_code, password });
 }));
 
@@ -481,6 +794,7 @@ app.post('/api/admin/accounts/:institutionId/set-password', requireAdmin, wrap(a
     'UPDATE app_accounts SET password_hash = $1, must_change = false, session_version = session_version + 1, updated_at = now() WHERE institution_id = $2',
     [hashPassword(password), req.params.institutionId]);
   if (!rowCount) return res.status(404).json({ error: 'الحساب غير موجود' });
+  await audit(req, 'password_set', { institution_id: req.params.institutionId });
   res.json({ ok: true });
 }));
 
@@ -495,6 +809,7 @@ app.post('/api/admin/accounts/reset-all', requireAdmin, wrap(async (req, res) =>
       [hashPassword(password), r.institution_id]);
     out.push({ institution_id: r.institution_id, login_code: r.login_code, password });
   }
+  await audit(req, 'password_reset_all', { detail: { count: out.length } });
   res.json(out);
 }));
 
@@ -512,16 +827,24 @@ app.post('/api/admin/institutions/:id/reset', requireAdmin, wrap(async (req, res
   };
   // ملاحظات المؤسسة على النظام تُحذف فقط إذا طلب المدير ذلك
   const keep = req.query.feedback === '1' ? ['waqf_institutions'] : ['waqf_institutions', 'waqf_feedback'];
-  await pool.query('DELETE FROM app_records WHERE institution_id = $1 AND NOT (collection = ANY($2))', [id, keep]);
-  await pool.query('DELETE FROM app_files WHERE institution_id = $1', [id]);
-  await pool.query("UPDATE app_records SET data = $1::jsonb, updated_at = now() WHERE collection = 'waqf_institutions' AND id = $2", [JSON.stringify(clean), id]);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM app_records WHERE institution_id = $1 AND NOT (collection = ANY($2))', [id, keep]);
+    await client.query('DELETE FROM app_files WHERE institution_id = $1', [id]);
+    await client.query("UPDATE app_records SET data = $1::jsonb, updated_at = now() WHERE collection = 'waqf_institutions' AND id = $2", [JSON.stringify(clean), id]);
+    await client.query('COMMIT');
+  } catch (e) { await client.query('ROLLBACK').catch(() => {}); throw e; } finally { client.release(); }
+  await audit(req, 'institution_reset', { institution_id: id, detail: { name: d.name, feedback: req.query.feedback === '1' } });
   res.json({ ok: true });
 }));
 
 // نسخة احتياطية كاملة
 app.get('/api/admin/export', requireAdmin, wrap(async (req, res) => {
   const { rows } = await pool.query('SELECT collection, id, institution_id, data, created_at, updated_at FROM app_records ORDER BY collection, created_at');
-  const accounts = await pool.query('SELECT institution_id, login_code FROM app_accounts ORDER BY login_code');
+  // الحسابات بكلمات مرورها المشفّرة ومستخدمو الوزارة، حتى تعود الرموز وبيانات الدخول كما هي عند الاستعادة
+  const accounts = await pool.query('SELECT institution_id, login_code, password_hash, must_change FROM app_accounts ORDER BY login_code');
+  const staff = await pool.query('SELECT username, password_hash, role, display_name, title, active, must_change, created_at FROM app_staff ORDER BY created_at');
   const withFiles = req.query.files === '1';
   let files;
   if (withFiles) {
@@ -530,7 +853,8 @@ app.get('/api/admin/export', requireAdmin, wrap(async (req, res) => {
   }
   const stamp = new Date().toISOString().slice(0, 10);
   res.setHeader('Content-Disposition', `attachment; filename="waqf-backup-${withFiles ? 'full-' : ''}${stamp}.json"`);
-  res.json({ version: 2, exported_at: new Date().toISOString(), records: rows, accounts: accounts.rows, ...(withFiles ? { files } : {}) });
+  await audit(req, 'backup_export', { detail: { files: withFiles } });
+  res.json({ version: 2, exported_at: new Date().toISOString(), records: rows, accounts: accounts.rows, staff: staff.rows, ...(withFiles ? { files } : {}) });
 }));
 
 // استعادة نسخة احتياطية (تستبدل كل السجلات، ولا تمس كلمات المرور)
@@ -545,6 +869,33 @@ app.post('/api/admin/import', requireAdmin, wrap(async (req, res) => {
       if (!COLLECTIONS[r.collection]) continue;
       await client.query('INSERT INTO app_records (collection, id, institution_id, data) VALUES ($1, $2, $3, $4::jsonb)',
         [r.collection, r.id, r.institution_id, JSON.stringify(r.data)]);
+    }
+    // الحسابات: تعود بنفس الرموز وكلمات المرور (النسخ القديمة بلا كلمات مرور تُبقي الحسابات الحالية)
+    const accs = Array.isArray(b.accounts) ? b.accounts.filter(a => a && a.institution_id && a.login_code && a.password_hash) : [];
+    if (accs.length) {
+      await client.query('DELETE FROM app_accounts');
+      for (const a of accs) {
+        await client.query('INSERT INTO app_accounts (institution_id, login_code, password_hash, must_change) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
+          [a.institution_id, a.login_code, a.password_hash, !!a.must_change]);
+      }
+    } else if (Array.isArray(b.accounts)) {
+      // نسخة قديمة فيها الرموز فقط: نعيد للمؤسسات رموزها السابقة ونُبقي كلمات المرور الحالية إن وُجدت
+      for (const a of b.accounts) {
+        if (!a?.institution_id || !a?.login_code) continue;
+        await client.query('DELETE FROM app_accounts WHERE upper(login_code) = upper($1) AND institution_id <> $2', [a.login_code, a.institution_id]);
+        await client.query(
+          `INSERT INTO app_accounts (institution_id, login_code, password_hash, must_change) VALUES ($1, $2, $3, true)
+           ON CONFLICT (institution_id) DO UPDATE SET login_code = EXCLUDED.login_code`,
+          [a.institution_id, a.login_code, hashPassword(randomPassword(24))]);
+      }
+    }
+    if (Array.isArray(b.staff) && b.staff.length) {
+      await client.query('DELETE FROM app_staff');
+      for (const u of b.staff) {
+        if (!u?.username || !u?.password_hash || !STAFF_ROLES.includes(u.role)) continue;
+        await client.query('INSERT INTO app_staff (username, password_hash, role, display_name, title, active, must_change) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING',
+          [u.username, u.password_hash, u.role, u.display_name || u.username, u.title || '', u.active !== false, !!u.must_change]);
+      }
     }
     // نسخة كاملة فيها ملفات: تُستبدل الملفات أيضاً. نسخة بدون ملفات: تبقى الملفات الحالية كما هي
     if (Array.isArray(b.files)) {
@@ -561,6 +912,7 @@ app.post('/api/admin/import', requireAdmin, wrap(async (req, res) => {
   const created = [];
   const { rows } = await pool.query("SELECT id FROM app_records WHERE collection = 'waqf_institutions' AND id NOT IN (SELECT institution_id FROM app_accounts)");
   for (const r of rows) created.push(await createAccount(r.id));
+  await audit(req, 'backup_import', { detail: { records: b.records.length, accounts: Array.isArray(b.accounts) ? b.accounts.length : 0 } });
   res.json({ ok: true, new_accounts: created, files_restored: Array.isArray(b.files) ? b.files.length : null });
 }));
 
@@ -576,6 +928,21 @@ const MIME_BY_EXT = {
 };
 const canAccessFile = (s, f) => seesAll(s) || f.institution_id === s.institution_id;
 
+// يُقبل الملف إذا طابق محتواه نوعه (لا يكفي الامتداد)
+const SIGNATURES = {
+  pdf: [[0x25, 0x50, 0x44, 0x46]],
+  png: [[0x89, 0x50, 0x4e, 0x47]], jpg: [[0xff, 0xd8, 0xff]], jpeg: [[0xff, 0xd8, 0xff]],
+  gif: [[0x47, 0x49, 0x46, 0x38]], webp: [[0x52, 0x49, 0x46, 0x46]],
+  docx: [[0x50, 0x4b]], xlsx: [[0x50, 0x4b]], pptx: [[0x50, 0x4b]],
+  doc: [[0xd0, 0xcf, 0x11, 0xe0]], xls: [[0xd0, 0xcf, 0x11, 0xe0]], ppt: [[0xd0, 0xcf, 0x11, 0xe0]],
+};
+const matchesType = (ext, buf) => {
+  const sigs = SIGNATURES[ext];
+  if (!sigs) return !buf.subarray(0, 512).toString('latin1').toLowerCase().includes('<script'); // txt/csv
+  return sigs.some(sig => sig.every((b, i) => buf[i] === b));
+};
+const MAX_INSTITUTION_BYTES = 500 * 1024 * 1024;
+
 app.post('/api/files', requireAuth, wrap(async (req, res) => {
   const s = req.session;
   const name = String(req.body?.name || '').slice(0, 255);
@@ -588,9 +955,13 @@ app.post('/api/files', requireAuth, wrap(async (req, res) => {
   const buf = Buffer.from(String(req.body?.data || ''), 'base64');
   if (!buf.length) return res.status(400).json({ error: 'الملف فارغ' });
   if (buf.length > MAX_FILE_BYTES) return res.status(400).json({ error: 'حجم الملف أكبر من 10 ميغابايت' });
+  if (!matchesType(ext, buf)) return res.status(400).json({ error: 'محتوى الملف لا يطابق نوعه' });
+  const used = await pool.query('SELECT COALESCE(SUM(size), 0)::bigint AS n FROM app_files WHERE institution_id = $1', [institutionId]);
+  if (Number(used.rows[0].n) + buf.length > MAX_INSTITUTION_BYTES) return res.status(400).json({ error: 'تجاوزت المؤسسة المساحة المسموحة للمرفقات' });
   const id = newId();
   await pool.query('INSERT INTO app_files (id, institution_id, name, mime, size, data) VALUES ($1,$2,$3,$4,$5,$6)',
     [id, institutionId, name, mime, buf.length, buf]);
+  await audit(req, 'file_upload', { institution_id: institutionId, record_id: id, detail: { name, size: buf.length } });
   res.json({ id, name, size: buf.length });
 }));
 
@@ -606,11 +977,24 @@ app.get('/api/files/:id', requireAuth, wrap(async (req, res) => {
   res.send(f.data);
 }));
 
+// الحذف: المدير، أو المؤسسة المالكة قبل رفع تقييمها. مستخدمو الوزارة لا يحذفون
 app.delete('/api/files/:id', requireAuth, wrap(async (req, res) => {
-  const { rows } = await pool.query('SELECT institution_id FROM app_files WHERE id = $1', [req.params.id]);
+  const s = req.session;
+  const { rows } = await pool.query('SELECT institution_id, name FROM app_files WHERE id = $1', [req.params.id]);
   if (!rows[0]) return res.json({ ok: true });
-  if (!canAccessFile(req.session, rows[0])) return res.status(403).json({ error: 'غير مسموح' });
+  if (isStaff(s)) return res.status(403).json({ error: 'صلاحيتك للاطلاع فقط' });
+  if (s.role !== 'admin') {
+    if (rows[0].institution_id !== s.institution_id) return res.status(403).json({ error: 'غير مسموح' });
+    if (await institutionLocked(s.institution_id)) {
+      // بعد الرفع: يُسمح فقط باستبدال أدلة تنفيذ خطة التحسين
+      const used = await pool.query(
+        "SELECT 1 FROM app_records WHERE collection = 'waqf_improvements' AND institution_id = $1 AND data->'evidence_doc'->>'file_id' = $2 LIMIT 1",
+        [s.institution_id, req.params.id]);
+      if (!used.rows.length) return res.status(403).json({ error: 'التقييم مرفوع للوزارة، ولا يمكن حذف المرفقات' });
+    }
+  }
   await pool.query('DELETE FROM app_files WHERE id = $1', [req.params.id]);
+  await audit(req, 'file_delete', { institution_id: rows[0].institution_id, record_id: req.params.id, detail: { name: rows[0].name } });
   res.json({ ok: true });
 }));
 
@@ -619,6 +1003,19 @@ app.get('/api/admin/files', requireAdmin, wrap(async (req, res) => {
   const { rows } = await pool.query(
     `SELECT id, institution_id, name, mime, size, created_at FROM app_files
      ${inst ? 'WHERE institution_id = $1' : ''} ORDER BY created_at DESC`, inst ? [inst] : []);
+  res.json(rows);
+}));
+
+// سجل العمليات (للمدير)
+app.get('/api/admin/audit', requireAdmin, wrap(async (req, res) => {
+  const conds = [], vals = [];
+  if (req.query.institution_id) { vals.push(String(req.query.institution_id)); conds.push(`institution_id = $${vals.length}`); }
+  if (req.query.action) { vals.push(String(req.query.action)); conds.push(`action = $${vals.length}`); }
+  if (req.query.before) { vals.push(Number(req.query.before)); conds.push(`id < $${vals.length}`); }
+  const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 200));
+  const { rows } = await pool.query(
+    `SELECT id, at, actor_role, actor_id, actor_name, action, institution_id, collection, record_id, detail
+     FROM app_audit ${conds.length ? 'WHERE ' + conds.join(' AND ') : ''} ORDER BY id DESC LIMIT ${limit}`, vals);
   res.json(rows);
 }));
 
@@ -679,6 +1076,34 @@ async function initDb() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
     CREATE INDEX IF NOT EXISTS app_files_inst_idx ON app_files (institution_id);
+    CREATE TABLE IF NOT EXISTS app_login_fails (
+      key TEXT PRIMARY KEY,
+      count INTEGER NOT NULL DEFAULT 0,
+      until TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS app_revoked (jti TEXT PRIMARY KEY, exp TIMESTAMPTZ NOT NULL);
+    CREATE TABLE IF NOT EXISTS app_audit (
+      id BIGSERIAL PRIMARY KEY,
+      at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      actor_role TEXT NOT NULL,
+      actor_id TEXT NOT NULL DEFAULT '',
+      actor_name TEXT NOT NULL DEFAULT '',
+      action TEXT NOT NULL,
+      institution_id TEXT,
+      collection TEXT,
+      record_id TEXT,
+      detail JSONB NOT NULL DEFAULT '{}'::jsonb,
+      ip TEXT
+    );
+    CREATE INDEX IF NOT EXISTS app_audit_inst_idx ON app_audit (institution_id, id DESC);
+  `);
+  // سجل العمليات للإضافة فقط: يُمنع تعديله أو حذفه من داخل القاعدة
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION app_audit_readonly() RETURNS trigger AS $$
+    BEGIN RAISE EXCEPTION 'app_audit is append-only'; END; $$ LANGUAGE plpgsql;
+    DROP TRIGGER IF EXISTS app_audit_no_change ON app_audit;
+    CREATE TRIGGER app_audit_no_change BEFORE UPDATE OR DELETE ON app_audit FOR EACH ROW EXECUTE FUNCTION app_audit_readonly();
   `);
 
   // مفتاح توقيع الجلسات: من Secrets إن وُجد، وإلا يُنشأ مرة ويُحفظ في القاعدة
@@ -706,6 +1131,10 @@ async function initDb() {
     await pool.query('UPDATE app_admins SET password_hash = $1, session_version = session_version + 1 WHERE username = $2', [hashPassword(process.env.ADMIN_PASSWORD), adminUser]);
     console.log('تم تعيين كلمة مرور المدير من ADMIN_PASSWORD');
   }
+
+  // دورة التقييم الحالية: تُثبَّت مرة واحدة في الإعدادات (أحدث دورة فيها تقييمات، أو السنة الحالية)،
+  // ثم يغيّرها المدير من الإعدادات عند فتح دورة جديدة
+  await ensureCycleSetting();
 
   // البيانات الأولية: مرة واحدة فقط
   const { rows: seeded } = await pool.query("SELECT value FROM app_meta WHERE key = 'seeded_v2'");
@@ -800,6 +1229,18 @@ async function seedFresh(client) {
       [id, `WQ${String(n).padStart(3, '0')}`, hashPassword(randomPassword(24))]);
   }
   console.log(`✅ تم تجهيز ${institutions.length} مؤسسة. أصدر كلمات المرور من: ملاحظات النظام ← الحسابات`);
+}
+
+async function ensureCycleSetting() {
+  const { rows } = await pool.query("SELECT id, data FROM app_records WHERE collection = 'waqf_settings' LIMIT 1");
+  if (rows[0] && Number.isInteger(Number(rows[0].data?.current_cycle)) && rows[0].data.current_cycle) return;
+  const ev = await pool.query("SELECT MAX((data->>'cycle_year')::int) AS y FROM app_records WHERE collection = 'waqf_evaluations' AND data->>'cycle_year' ~ '^[0-9]{4}$'");
+  const year = ev.rows[0]?.y || new Date().getFullYear();
+  if (rows[0]) {
+    await pool.query("UPDATE app_records SET data = data || jsonb_build_object('current_cycle', $1::int) WHERE collection = 'waqf_settings' AND id = $2", [year, rows[0].id]);
+  } else {
+    await pool.query("INSERT INTO app_records (collection, id, institution_id, data) VALUES ('waqf_settings', 'main', NULL, $1::jsonb)", [JSON.stringify({ id: 'main', current_cycle: year })]);
+  }
 }
 
 async function main() {

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Printer, Coins, Timer } from 'lucide-react';
-import { getInstitutions, getEvaluations, getAllResponses, getRisks, getIndicators, getFinancialRecords, getComplianceRecords, getSettings, saveSettings } from '../services/db';
+import { getInstitutions, getEvaluations, getAllResponses, getRisks, getIndicators, getFinancialRecords, getComplianceRecords, getCycleYears } from '../services/db';
 import { buildDemoData } from '../services/demoData';
 import { useUi } from '../contexts/UiContext';
 import { getDeadline } from '../utils/deadline';
@@ -42,11 +42,13 @@ const DashboardInner: React.FC = () => {
   const { currentWaqfId, setWaqfContext, currentYear, setYearContext, role } = useUi();
   const isAdmin = role === 'admin'; // وضع العرض التوضيحي من صلاحية المدير فقط
   const navigate = useNavigate();
-  const [demoMode, setDemoMode] = useState(() => getSettings().demoMode === true);
+  // وضع العرض التوضيحي: تفضيل لشاشة المدير في هذا المتصفح فقط، لا يراه المعتمِد ولا المطّلع
+  const DEMO_KEY = 'waqf_demo_mode';
+  const [demoMode, setDemoMode] = useState(() => { try { return isAdmin && localStorage.getItem(DEMO_KEY) === '1'; } catch { return false; } });
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    const sync = () => { setDemoMode(getSettings().demoMode === true); setTick(t => t + 1); };
+    const sync = () => setTick(t => t + 1);
     window.addEventListener('settingsChanged', sync);
     return () => window.removeEventListener('settingsChanged', sync);
   }, []);
@@ -67,8 +69,12 @@ const DashboardInner: React.FC = () => {
   }, [demoMode, tick]);
 
   const m = useMemo(() => buildDashboard(src, currentYear, currentWaqfId || null, deadline?.date || null), [src, currentYear, currentWaqfId, deadline?.date]);
-  const years = Array.from({ length: 7 }, (_, i) => 2024 + i);
-  const toggleDemo = () => saveSettings({ ...getSettings(), demoMode: !demoMode });
+  const years = getCycleYears();
+  const toggleDemo = () => {
+    const next = !demoMode;
+    try { localStorage.setItem(DEMO_KEY, next ? '1' : '0'); } catch { /* ignore */ }
+    setDemoMode(next);
+  };
   const openInst = (id: string) => { setWaqfContext(id); navigate('/reports'); };
 
   const maxBracket = Math.max(1, ...m.brackets.map(b => b.n));
@@ -329,7 +335,7 @@ const DashboardInner: React.FC = () => {
       {/* 5. المالية ومؤسسات تحتاج متابعة */}
       <section aria-labelledby="d5" className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
         <div className="flex flex-col gap-4">
-          <SectionTitle id="d5" title="المؤشرات المالية للقطاع" sub={`من ${m.finance.count} قائمة مالية لسنة ${currentYear}`} />
+          <SectionTitle id="d5" title="المؤشرات المالية للقطاع" sub={`من ${m.finance.count} قائمة مالية لدورة ${currentYear} (أو السنة التي قبلها)`} />
           <Card className="flex flex-col gap-4">
             {m.finance.count ? (<>
               <div className="flex flex-col gap-2.5">

@@ -18,7 +18,10 @@ export const OMAN_LOCATIONS: Record<string, string[]> = {
   "الوسطى": ["هيماء", "محوت", "الدقم", "الجازر"]
 };
 
-export const CURRENT_YEAR = new Date().getFullYear();
+// دورة التقييم الحالية: يحددها المدير من الإعدادات (تُضبط بعد تحميل البيانات من الخادم)،
+// ولا تتبع ساعة جهاز المستخدم
+export let CURRENT_YEAR = new Date().getFullYear();
+export const setCycleYear = (y: number) => { if (Number.isInteger(y) && y > 2000 && y < 2100) CURRENT_YEAR = y; };
 
 // Specific Colors for Ratings 1-5
 export const RATING_COLORS: Record<number, string> = {

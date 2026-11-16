@@ -23,6 +23,7 @@ const SystemFeedbackPage = lazy(() => import('./pages/SystemFeedback'));
 const InstitutionHome = lazy(() => import('./pages/InstitutionHome'));
 const Tracking = lazy(() => import('./pages/Tracking'));
 const Accounts = lazy(() => import('./pages/Accounts'));
+const AuditLog = lazy(() => import('./pages/AuditLog'));
 
 const PageLoader = () => (
   <div className="flex flex-col items-center justify-center h-[80vh] text-navy-800">
@@ -110,6 +111,7 @@ const AppRoutes: React.FC = () => {
         <Route path="/tracking" element={<ProtectedRoute requiredRole="ministry"><Tracking /></ProtectedRoute>} />
         <Route path="/accounts" element={<ProtectedRoute requiredRole="admin"><Accounts /></ProtectedRoute>} />
         <Route path="/staff" element={<ProtectedRoute requiredRole="admin"><StaffUsers /></ProtectedRoute>} />
+        <Route path="/audit" element={<ProtectedRoute requiredRole="admin"><AuditLog /></ProtectedRoute>} />
         <Route path="/reports" element={<ProtectedRoute requiredRole="any"><Reports /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute requiredRole="admin"><Settings /></ProtectedRoute>} />
         <Route path="/approval-requests" element={<ProtectedRoute requiredRole="ministry"><ApprovalRequests /></ProtectedRoute>} />

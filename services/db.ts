@@ -1,5 +1,5 @@
 import { Institution, Indicator, Evaluation, Response, ComplianceRecord, ImprovementItem, RiskRegisterItem, FinancialRecord, InstitutionAccount, SystemFeedback, InstitutionDocument } from '../types';
-import { DEFAULT_INDICATORS, CURRENT_YEAR } from '../constants';
+import { DEFAULT_INDICATORS, CURRENT_YEAR, setCycleYear } from '../constants';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // طبقة البيانات
@@ -110,16 +110,34 @@ const data = <T>(key: string): T[] => {
   return cache[key] as T[];
 };
 
+// الحفظ: يحدّث الذاكرة ثم يرسل للخادم. إذا رفض الخادم يعود السجل لحالته السابقة،
+// وإذا عدّل الخادم حقولاً (تواريخ، رقم مرجع) تُؤخذ نسخته
 const upsert = <T extends { id: string }>(key: string, item: T) => {
   const list = data<T>(key);
   const i = list.findIndex(x => x.id === item.id);
+  const prev = i >= 0 ? list[i] : undefined;
   if (i >= 0) list[i] = item; else list.push(item);
-  return enqueue(() => request('PUT', `/records/${key}/${encodeURIComponent(item.id)}`, item));
+  return enqueue(() => request('PUT', `/records/${key}/${encodeURIComponent(item.id)}`, item)).then(r => {
+    const l = data<T>(key); const j = l.findIndex(x => x.id === item.id);
+    if (r?.item && j >= 0 && l[j] === item) l[j] = r.item;
+    return r;
+  }, e => {
+    const l = data<T>(key); const j = l.findIndex(x => x.id === item.id);
+    if (j >= 0 && l[j] === item) { if (prev) l[j] = prev; else l.splice(j, 1); }
+    window.dispatchEvent(new Event('dataRolledBack'));
+    throw e;
+  });
 };
 
 const remove = (key: string, id: string) => {
-  cache[key] = data<any>(key).filter(x => x.id !== id);
-  return enqueue(() => request('DELETE', `/records/${key}/${encodeURIComponent(id)}`));
+  const before = data<any>(key);
+  const prev = before.find(x => x.id === id);
+  cache[key] = before.filter(x => x.id !== id);
+  return enqueue(() => request('DELETE', `/records/${key}/${encodeURIComponent(id)}`)).catch(e => {
+    if (prev && !data<any>(key).some(x => x.id === id)) data<any>(key).push(prev);
+    window.dispatchEvent(new Event('dataRolledBack'));
+    throw e;
+  });
 };
 
 // ─── التحميل والدخول ───────────────────────────────────────────────────────
@@ -135,6 +153,17 @@ export const loadData = async () => {
     if (k === DB_KEYS.SETTINGS) settingsCache = d[k] || null;
     else cache[k] = Array.isArray(d[k]) ? d[k] : [];
   });
+  setCycleYear(Number(settingsCache?.current_cycle) || latestCycle());
+};
+// إن لم تُضبط الدورة في الإعدادات: أحدث دورة فيها تقييمات (لا تتغير بتغير السنة)
+const latestCycle = () => {
+  const ys = data<Evaluation>(DB_KEYS.EVALUATIONS).map(e => e.cycle_year).filter(Number.isInteger);
+  return ys.length ? Math.max(...ys) : new Date().getFullYear();
+};
+export const getCycleYears = (): number[] => {
+  const ys = new Set<number>(data<Evaluation>(DB_KEYS.EVALUATIONS).map(e => e.cycle_year).filter(Number.isInteger));
+  ys.add(CURRENT_YEAR);
+  return [...ys].sort((a, b) => b - a);
 };
 
 export const refreshData = async () => {
@@ -183,8 +212,6 @@ export const changePassword = async (current: string, next: string) => {
   session = { ...session, must_change_password: false };
 };
 
-// كان يُستخدم لإعادة القراءة من localStorage — البيانات الآن في الذاكرة ومحدّثة
-export const clearCache = (..._keys: string[]) => { /* no-op */ };
 
 // ─── المؤسسات ───────────────────────────────────────────────────────────────
 export const getInstitutions = (): Institution[] => data<Institution>(DB_KEYS.INSTITUTIONS);
@@ -206,18 +233,25 @@ export const getFinancialRecords = (instId?: string): FinancialRecord[] => {
 };
 export const analyzeFinancialHealth = (record: FinancialRecord) => {
   const flags: string[] = [], errors: string[] = [];
-  const calculatedNet = record.total_assets - record.total_liabilities;
-  const diff = Math.abs(calculatedNet - record.net_waqf_assets);
-  if (diff > 1) errors.push(`خطأ محاسبي: المعادلة غير متزنة.`);
-  if (record.total_expenses > 0 && ((record.admin_general_expenses / record.total_expenses) * 100 > 20)) flags.push(`تنبيه: المصاريف الإدارية مرتفعة.`);
-  if (record.total_expenses > record.total_revenues) flags.push('تنبيه: عجز تشغيلي.');
-  if (record.net_waqf_assets < 0) flags.push('خطر حرج: تآكل رأس المال.');
+  const nums = ['total_assets', 'total_liabilities', 'total_revenues', 'total_expenses', 'admin_general_expenses'] as const;
+  if (nums.some(k => !Number.isFinite(Number(record[k])) || Number(record[k]) < 0)) errors.push('القيم المالية لا تكون سالبة.');
+  if (!(Number(record.total_assets) > 0)) errors.push('أدخل إجمالي الأصول كما في القوائم المالية.');
+  if (!record.unaudited && !(record.auditor_name || '').trim()) errors.push('اكتب اسم مكتب التدقيق، أو اختر «غير مدققة».');
+  if (record.admin_general_expenses > record.total_expenses && record.total_expenses > 0) errors.push('المصاريف الإدارية أكبر من إجمالي المصروفات.');
+  if (record.total_expenses > 0 && ((record.admin_general_expenses / record.total_expenses) * 100 > 20)) flags.push('المصاريف الإدارية أعلى من 20% من المصروفات.');
+  if (record.total_expenses > record.total_revenues) flags.push('عجز في السنة: المصروفات أكبر من الإيرادات.');
+  if (record.net_waqf_assets < 0) flags.push('صافي أصول الوقف سالب (الالتزامات أكبر من الأصول).');
   if (record.beneficiary_distributions !== undefined && record.beneficiary_distributions !== null && record.beneficiary_distributions > record.total_expenses && record.total_expenses > 0) {
-    errors.push('المبالغ المصروفة على مصارف الوقف أكبر من إجمالي المصروفات.');
+    flags.push('المصروف على الموقوف عليهم أكبر من إجمالي المصروفات؛ تأكد من طريقة عرضه في القوائم.');
   }
   return { isValid: errors.length === 0, status: flags.length > 0 ? 'Flagged' : 'Submitted' as const, flags, errors };
 };
 export const saveFinancialRecord = (record: FinancialRecord) => upsert(DB_KEYS.FINANCIALS, record);
+// قاعدة واحدة لكل الصفحات: قوائم سنة الدورة، وإلا قوائم السنة التي قبلها
+export const getCycleFinancial = (instId: string, cycleYear: number): FinancialRecord | undefined => {
+  const fins = getFinancialRecords(instId);
+  return fins.find(f => f.fiscal_year === cycleYear) || fins.find(f => f.fiscal_year === cycleYear - 1);
+};
 export const deleteFinancialRecord = (id: string) => remove(DB_KEYS.FINANCIALS, id);
 
 // ─── المؤشرات ───────────────────────────────────────────────────────────────
@@ -243,7 +277,7 @@ export const saveEvaluation = (e: Evaluation) => upsert(DB_KEYS.EVALUATIONS, e);
 // نفس منطق صفحة طلبات الاعتماد: التقييمات المرفوعة لمؤسسات موجودة فعلاً
 export const getPendingEvaluationsCount = () => {
   const ids = new Set(getInstitutions().map(i => i.id));
-  return getEvaluations(CURRENT_YEAR).filter(e => e.workflow_status === 'submitted' && ids.has(e.institution_id)).length;
+  return getEvaluations().filter(e => e.workflow_status === 'submitted' && ids.has(e.institution_id)).length;
 };
 export const getResponses = (id: string) => data<Response>(DB_KEYS.RESPONSES).filter(r => r.evaluation_id === id);
 export const getAllResponses = () => data<Response>(DB_KEYS.RESPONSES);
@@ -267,9 +301,16 @@ export const deleteImprovement = (id: string) => remove(DB_KEYS.IMPROVEMENTS, id
 // ─── الإعدادات ──────────────────────────────────────────────────────────────
 export const getSettings = () => ({ ...DEFAULT_SETTINGS, ...(settingsCache || {}) });
 export const saveSettings = (s: any) => {
+  const prev = settingsCache;
   settingsCache = { ...s, id: 'main' };
-  enqueue(() => request('PUT', `/records/${DB_KEYS.SETTINGS}/main`, settingsCache));
+  if (settingsCache.current_cycle) setCycleYear(Number(settingsCache.current_cycle));
   window.dispatchEvent(new Event('settingsChanged'));
+  return enqueue(() => request('PUT', `/records/${DB_KEYS.SETTINGS}/main`, settingsCache)).catch(e => {
+    settingsCache = prev;
+    setCycleYear(Number(prev?.current_cycle) || latestCycle());
+    window.dispatchEvent(new Event('settingsChanged'));
+    throw e;
+  });
 };
 
 // ─── حسابات المؤسسات (للمدير فقط) ───────────────────────────────────────────
@@ -287,6 +328,14 @@ export const setAccountPassword = (institutionId: string, password: string): Pro
 export const resetAccountPassword = (institutionId: string): Promise<InstitutionAccount> =>
   request('POST', `/admin/accounts/${encodeURIComponent(institutionId)}/reset-password`);
 export const resetAllPasswords = (): Promise<InstitutionAccount[]> => request('POST', '/admin/accounts/reset-all');
+
+// ─── سجل العمليات (للمدير) ───────────────────────────────────────────────────
+export interface AuditEntry { id: number; at: string; actor_role: string; actor_id: string; actor_name: string; action: string; institution_id: string | null; collection: string | null; record_id: string | null; detail: any }
+export const fetchAudit = (q: { institution_id?: string; action?: string; before?: number; limit?: number } = {}): Promise<AuditEntry[]> => {
+  const p = new URLSearchParams();
+  Object.entries(q).forEach(([k, v]) => { if (v !== undefined && v !== '') p.set(k, String(v)); });
+  return request('GET', `/admin/audit?${p.toString()}`);
+};
 
 // ─── الملاحظات ──────────────────────────────────────────────────────────────
 export const getFeedback = (): SystemFeedback[] => data<SystemFeedback>(DB_KEYS.FEEDBACK);
@@ -346,7 +395,7 @@ export const getInstitutionProgress = (id: string | null) => {
   const i = getInstitutions().find(x => x.id === id);
   const e = getEvaluations().find(x => x.institution_id === id && x.cycle_year === CURRENT_YEAR);
   const c = getComplianceRecords().find(x => x.institution_id === id && x.cycle_year === CURRENT_YEAR);
-  const f = getFinancialRecords(id).find(r => r.fiscal_year === CURRENT_YEAR || r.fiscal_year === CURRENT_YEAR - 1);
+  const f = getCycleFinancial(id, CURRENT_YEAR);
   const isFinancialsSubmitted = !!f && (f.status === 'Submitted' || f.status === 'Approved' || f.status === 'Flagged');
   return {
       dataComplete: !!(i?.profile_completed),

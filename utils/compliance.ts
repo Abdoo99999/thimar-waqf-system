@@ -1,7 +1,7 @@
 // منطق الامتثال المشترك: تستخدمه صفحة الامتثال والتقارير وخطة التحسين،
 // حتى تُحسب النسبة والفجوات بنفس الطريقة في كل مكان.
 import { CURRENT_YEAR } from '../constants';
-import { getInstitutions, getFinancialRecords } from '../services/db';
+import { getInstitutions, getCycleFinancial } from '../services/db';
 import type { ComplianceRecord, CustomRequirement, ObligationAnswer, RiskRegisterItem } from '../types';
 
 // ─── الالتزامات النظامية (مسودة قابلة للتعديل وفق اللوائح) ───────────────────
@@ -69,8 +69,7 @@ export const getBoardStatus = (establishmentDate?: string) => {
 
 export const getAutoChecks = (institutionId: string): AutoCheck[] => {
   const inst = getInstitutions().find(i => i.id === institutionId);
-  const fins = getFinancialRecords(institutionId);
-  const fin = fins.find(f => f.fiscal_year === CURRENT_YEAR) || fins.find(f => f.fiscal_year === CURRENT_YEAR - 1);
+  const fin = getCycleFinancial(institutionId, CURRENT_YEAR);
   const finDone = !!fin && ['Submitted', 'Approved', 'Flagged'].includes(fin.status);
   const auditor = (fin?.auditor_name || '').trim();
   const board = getBoardStatus(inst?.establishment_date);

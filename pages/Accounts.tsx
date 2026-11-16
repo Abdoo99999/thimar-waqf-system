@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { fetchAccounts, resetAccountPassword, setAccountPassword, resetAllPasswords, getInstitutions, resetInstitution, AccountSummary, getEvaluations, getFinancialRecords, getComplianceRecords, getRisks } from '../services/db';
 import { getInstitutionJourney, JOURNEY_STEPS } from '../utils/institutionJourney';
 import { useUi } from '../contexts/UiContext';
+import { useEscape } from '../components/Modal';
 import { Institution } from '../types';
 import { KeyRound, Copy, CheckCircle, RotateCcw, AlertTriangle } from 'lucide-react';
 
@@ -15,6 +16,7 @@ const Accounts: React.FC = () => {
   const [confirmResetId, setConfirmResetId] = useState<string | null>(null);
   const [resetDone, setResetDone] = useState<string | null>(null);
   const [pwFor, setPwFor] = useState<string | null>(null);
+  useEscape(!!pwFor || !!confirmResetId, () => { setPwFor(null); setConfirmResetId(null); });
   const [pwValue, setPwValue] = useState('');
 
   const handleSetPassword = async () => {
@@ -228,7 +230,7 @@ const Accounts: React.FC = () => {
 
           {/* نافذة تأكيد الإعادة */}
           {confirmResetId && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setConfirmResetId(null)}>
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-label="مسح بيانات المؤسسة" onClick={() => setConfirmResetId(null)}>
               <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" dir="rtl" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center shrink-0">

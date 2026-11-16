@@ -1,41 +1,44 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { getInstitutions, getEvaluations, getResponses, clearCache } from '../services/db';
+import { getInstitutions, getEvaluations, getResponses, getIndicators, refreshData } from '../services/db';
 import { Institution, Evaluation } from '../types';
-import { CURRENT_YEAR } from '../constants';
+import { scoreResponses, formatScore } from '../utils/score';
 import { Eye, Clock, RefreshCw } from 'lucide-react';
 import { useUi } from '../contexts/UiContext';
 import { useNavigate } from 'react-router-dom';
 
 const ApprovalRequests: React.FC = () => {
-  const [requests, setRequests] = useState<{inst: Institution, eval: Evaluation, score: string}[]>([]);
+  const [requests, setRequests] = useState<{inst: Institution, eval: Evaluation, score: string, good: boolean}[]>([]);
   const [loading, setLoading] = useState(false);
   const { setWaqfContext, showToast } = useUi();
   const navigate = useNavigate();
 
-  const loadRequests = useCallback(() => {
-    setLoading(true);
-    // مسح الكاش لضمان قراءة أحدث بيانات من localStorage
-    clearCache();
-    const evals = getEvaluations(CURRENT_YEAR).filter(e => e.workflow_status === 'submitted');
+  // كل الطلبات المرفوعة بانتظار الاعتماد، من أي دورة (لا تختفي طلبات دورة سابقة)
+  const buildList = useCallback(() => {
     const allInsts = getInstitutions();
-
-    const result = evals.map(e => {
+    const axis = new Map(getIndicators().map(i => [i.id, i.axis] as const));
+    const result = getEvaluations().filter(e => e.workflow_status === 'submitted').map(e => {
         const inst = allInsts.find(i => i.id === e.institution_id);
-        const responses = getResponses(e.id);
-        const avg = responses.length > 0
-          ? (responses.reduce((a, b) => a + b.score, 0) / responses.length).toFixed(1)
-          : "0.0";
-        return inst ? { inst, eval: e, score: avg } : null;
-    }).filter(Boolean) as {inst: Institution, eval: Evaluation, score: string}[];
-
+        const sc = scoreResponses(getResponses(e.id), id => axis.get(id));
+        return inst ? { inst, eval: e, score: formatScore(sc), good: sc.avg >= 4 } : null;
+    }).filter(Boolean) as {inst: Institution, eval: Evaluation, score: string, good: boolean}[];
+    result.sort((a, b) => (a.eval.submission_date || '').localeCompare(b.eval.submission_date || ''));
     setRequests(result);
-    setLoading(false);
   }, []);
 
+  // زر التحديث يجلب أحدث البيانات من الخادم فعلاً
+  const loadRequests = useCallback(async () => {
+    setLoading(true);
+    try { await refreshData(); window.dispatchEvent(new Event('badgesChanged')); }
+    catch { showToast('تعذر تحديث البيانات، تحقق من الاتصال', 'error'); }
+    buildList();
+    setLoading(false);
+  }, [buildList]);
+
   useEffect(() => {
+    buildList();
     loadRequests();
-  }, [loadRequests]);
+  }, [buildList, loadRequests]);
 
   const handleView = (id: string) => {
     setWaqfContext(id);
@@ -57,6 +60,7 @@ const ApprovalRequests: React.FC = () => {
             onClick={loadRequests}
             disabled={loading}
             title="تحديث القائمة"
+            aria-label="تحديث القائمة"
             className="flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg text-sm font-bold transition-colors"
           >
             <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
@@ -71,8 +75,9 @@ const ApprovalRequests: React.FC = () => {
           <div key={req.eval.id} className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
             <p className="font-bold text-navy-900">{req.inst.name}</p>
             <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
-              <span className="flex items-center gap-1.5 text-gray-500"><Clock size={14} />{new Date(req.eval.submission_date!).toLocaleDateString('ar-OM-u-nu-latn')}</span>
-              <span className={`px-2 py-0.5 rounded font-bold ${Number(req.score) >= 4 ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{req.score} / 5.0 ({Math.round(Number(req.score) / 5 * 100)}%)</span>
+              <span className="flex items-center gap-1.5 text-gray-500"><Clock size={14} />{req.eval.submission_date ? new Date(req.eval.submission_date).toLocaleDateString('ar-OM-u-nu-latn') : '—'}</span>
+              <span className={`px-2 py-0.5 rounded font-bold ${req.good ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{req.score}</span>
+              <span className="text-xs text-gray-500">دورة {req.eval.cycle_year}</span>
             </div>
             <button onClick={() => handleView(req.inst.id)} className="mt-3 w-full min-h-[44px] flex items-center justify-center gap-2 rounded-lg bg-blue-50 text-blue-700 font-bold text-sm">
               <Eye size={16} /> معاينة ومراجعة
@@ -98,16 +103,16 @@ const ApprovalRequests: React.FC = () => {
             {requests.length > 0 ? (
               requests.map((req) => (
                 <tr key={req.eval.id} className="hover:bg-blue-50 transition-colors">
-                  <td className="p-4 font-bold text-navy-900">{req.inst.name}</td>
+                  <td className="p-4 font-bold text-navy-900">{req.inst.name}<span className="mr-2 text-xs font-normal text-gray-500">دورة {req.eval.cycle_year}</span></td>
                   <td className="p-4 text-gray-500 text-sm">
                     <div className="flex items-center gap-2">
                       <Clock size={14} />
-                      {new Date(req.eval.submission_date!).toLocaleDateString('ar-OM-u-nu-latn')}
+                      {req.eval.submission_date ? new Date(req.eval.submission_date).toLocaleDateString('ar-OM-u-nu-latn') : '—'}
                     </div>
                   </td>
                   <td className="p-4">
-                    <span className={`px-2 py-1 rounded text-sm font-bold ${Number(req.score) >= 4 ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                      {req.score} / 5.0 ({Math.round(Number(req.score) / 5 * 100)}%)
+                    <span className={`px-2 py-1 rounded text-sm font-bold ${req.good ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                      {req.score}
                     </span>
                   </td>
                   <td className="p-4">

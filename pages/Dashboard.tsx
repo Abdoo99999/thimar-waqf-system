@@ -1,7 +1,7 @@
 import React from 'react';
 import DashboardModern from './DashboardModern';
 
-// لوحة القيادة: الشكل الجديد فقط. الشكل السابق محفوظ في DashboardClassic.tsx احتياطاً (غير مرتبط بالواجهة)
+// لوحة القيادة
 const Dashboard: React.FC = () => <DashboardModern />;
 
 export default Dashboard;

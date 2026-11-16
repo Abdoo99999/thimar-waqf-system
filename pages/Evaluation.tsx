@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { getInstitutions, getIndicators, saveIndicators, getEvaluationByInstAndYear, saveEvaluation, getResponses, saveResponse, generateId, getInstitutionProgress, uploadFile, deleteFile } from '../services/db';
+import { getInstitutions, getIndicators, saveIndicators, getAllResponses, getEvaluationByInstAndYear, saveEvaluation, getResponses, saveResponse, generateId, getInstitutionProgress, uploadFile, deleteFile } from '../services/db';
+import { useEscape } from '../components/Modal';
 import AttachmentLink, { ATTACHMENT_ACCEPT } from '../components/AttachmentLink';
 import { Institution, Indicator, Evaluation, Response, InstitutionDocument } from '../types';
 import { CURRENT_YEAR, RATING_COLORS } from '../constants';
@@ -40,11 +41,13 @@ const EvaluationPage: React.FC = () => {
 
   // Modals State
   const [showAddInd, setShowAddInd] = useState(false);
+  useEscape(showAddInd, () => setShowAddInd(false));
   const [newIndAxis, setNewIndAxis] = useState('');
   const [customAxis, setCustomAxis] = useState('');
   const [newIndText, setNewIndText] = useState('');
   
   const [showDeleteInd, setShowDeleteInd] = useState(false);
+  useEscape(showDeleteInd, () => setShowDeleteInd(false));
   const [deleteAxis, setDeleteAxis] = useState('');
   const [deleteIndId, setDeleteIndId] = useState('');
 
@@ -138,6 +141,11 @@ const EvaluationPage: React.FC = () => {
 
   const handleDeleteIndicator = () => {
       if (!deleteIndId) { showToast('يرجى اختيار المؤشر للحذف', 'error'); return; }
+      // المؤشرات ثابتة ما دامت عليها إجابات، وإلا تنفصل عنها نتائج المؤسسات
+      if (getAllResponses().some(r => r.indicator_id === deleteIndId)) {
+          showToast('لا يمكن حذف مؤشر قيّمته مؤسسات؛ تنفصل عنه نتائجها.', 'error');
+          return;
+      }
       if(confirm('هل أنت متأكد من حذف هذا المؤشر؟')) {
           const updatedList = indicators.filter(i => i.id !== deleteIndId);
           setIndicators(updatedList);
@@ -231,7 +239,12 @@ const EvaluationPage: React.FC = () => {
   const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (isLocked) return;
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
+    if (getAllResponses().length > 0) {
+        showToast('لا يمكن استبدال المؤشرات بعد أن بدأت المؤسسات التقييم عليها؛ يمكن إضافة مؤشرات جديدة فقط.', 'error');
+        return;
+    }
     const reader = new FileReader();
     reader.onload = (evt) => {
       const bstr = evt.target?.result;
@@ -370,9 +383,9 @@ const EvaluationPage: React.FC = () => {
       
       {/* MODALS (Add/Delete) - Preserved */}
       {showAddInd && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="add-ind-title">
               <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl animate-scaleIn">
-                  <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold">إضافة مؤشر جديد</h3><button onClick={() => setShowAddInd(false)}><X size={20}/></button></div>
+                  <div className="flex justify-between items-center mb-4"><h3 id="add-ind-title" className="text-lg font-bold">إضافة مؤشر جديد</h3><button type="button" aria-label="إغلاق" onClick={() => setShowAddInd(false)}><X size={20} aria-hidden="true"/></button></div>
                   <div className="space-y-4">
                       <div><label className="block text-sm font-medium mb-1">المحور</label><select className="w-full border p-2 rounded" value={newIndAxis} onChange={e => setNewIndAxis(e.target.value)}>{availableAxes.map(a => <option key={a} value={a}>{a}</option>)}<option value="NEW_AXIS_CUSTOM_VALUE">محور جديد</option></select>{newIndAxis === 'NEW_AXIS_CUSTOM_VALUE' && <input type="text" placeholder="اسم المحور" className="w-full border p-2 rounded mt-2" value={customAxis} onChange={e => setCustomAxis(e.target.value)} />}</div>
                       <div><label className="block text-sm font-medium mb-1">نص المؤشر</label><textarea className="w-full border p-2 rounded h-24" value={newIndText} onChange={e => setNewIndText(e.target.value)}></textarea></div>
@@ -382,9 +395,9 @@ const EvaluationPage: React.FC = () => {
           </div>
       )}
       {showDeleteInd && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="del-ind-title">
               <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl animate-scaleIn">
-                  <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold text-red-600">حذف مؤشر</h3><button onClick={() => setShowDeleteInd(false)}><X size={20}/></button></div>
+                  <div className="flex justify-between items-center mb-4"><h3 id="del-ind-title" className="text-lg font-bold text-red-600">حذف مؤشر</h3><button type="button" aria-label="إغلاق" onClick={() => setShowDeleteInd(false)}><X size={20} aria-hidden="true"/></button></div>
                   <div className="space-y-4">
                       <div><label className="block text-sm font-medium mb-1">المحور</label><select className="w-full border p-2 rounded" value={deleteAxis} onChange={e => { setDeleteAxis(e.target.value); setDeleteIndId(''); }}><option value="">-- اختر --</option>{availableAxes.map(a => <option key={a} value={a}>{a}</option>)}</select></div>
                       {deleteAxis && <div><label className="block text-sm font-medium mb-1">اختر المؤشر</label><select className="w-full border p-2 rounded" value={deleteIndId} onChange={e => setDeleteIndId(e.target.value)}><option value="">-- اختر --</option>{grouped[deleteAxis]?.map(ind => <option key={ind.id} value={ind.id}>{ind.text.substring(0, 60)}...</option>)}</select></div>}
@@ -508,6 +521,8 @@ const EvaluationPage: React.FC = () => {
                                                         key={score}
                                                         onClick={() => handleScore(ind.id, score)}
                                                         disabled={isLocked}
+                                                        aria-pressed={responses[ind.id]?.score === score}
+                                                        aria-label={`الدرجة ${score} من 5`}
                                                         className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl font-bold border-2 transition-all duration-200 transform ${
                                                             responses[ind.id]?.score === score
                                                                 ? `${RATING_COLORS[score]} scale-110 shadow-lg ring-2 ring-offset-2 ring-gray-200`

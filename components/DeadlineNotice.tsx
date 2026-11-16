@@ -1,9 +1,9 @@
 import React from 'react';
 import { CalendarClock } from 'lucide-react';
-import { getDeadline, DEADLINE_STYLE } from '../utils/deadline';
+import { getDeadline, DEADLINE_STYLE, submittedOnTime } from '../utils/deadline';
 
 // شريط الموعد النهائي. done = المؤسسة رفعت تقييمها (يظهر بلون هادئ بلا استعجال)
-const DeadlineNotice: React.FC<{ done?: boolean; compact?: boolean }> = ({ done, compact }) => {
+const DeadlineNotice: React.FC<{ done?: boolean; compact?: boolean; submittedAt?: string }> = ({ done, compact, submittedAt }) => {
   const d = getDeadline();
   if (!d) return null;
   const style = done ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : DEADLINE_STYLE[d.tone];
@@ -14,7 +14,9 @@ const DeadlineNotice: React.FC<{ done?: boolean; compact?: boolean }> = ({ done,
         <span className="text-sm font-bold">الموعد النهائي لرفع التقييم: {d.dateLabel}</span>
         {!compact && (
           <span className="text-xs opacity-80">
-            {done ? 'تم رفع التقييم، شكراً لالتزامكم بالموعد.' : d.tone === 'passed' ? 'يرجى التواصل مع الوزارة إذا لم يُرفع التقييم بعد.' : 'أكمل الخطوات وارفع التقييم قبل نهاية هذا اليوم.'}
+            {done
+              ? (submittedOnTime(submittedAt) ? 'تم رفع التقييم، شكراً لالتزامكم بالموعد.' : 'تم رفع التقييم بعد الموعد النهائي.')
+              : d.tone === 'passed' ? 'انتهى الموعد. يرجى التواصل مع الوزارة إذا لم يُرفع التقييم بعد.' : 'أكمل الخطوات وارفع التقييم قبل نهاية يوم الموعد المذكور.'}
           </span>
         )}
       </div>

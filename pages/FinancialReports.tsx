@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useUi } from '../contexts/UiContext';
 import { useNavigate } from 'react-router-dom';
 import { StepBar, StepFooter } from '../components/StepNav';
-import { getInstitutions, saveFinancialRecord, getFinancialRecords, analyzeFinancialHealth, generateId, getInstitutionProgress, uploadFile, deleteFile } from '../services/db';
+import { getInstitutions, saveFinancialRecord, getFinancialRecords, getCycleFinancial, analyzeFinancialHealth, generateId, getInstitutionProgress, uploadFile, deleteFile } from '../services/db';
 import AttachmentLink, { ATTACHMENT_ACCEPT } from '../components/AttachmentLink';
 import { FinancialRecord, InstitutionDocument } from '../types';
 import { CURRENT_YEAR } from '../constants';
@@ -14,7 +14,8 @@ import {
 } from 'lucide-react';
 
 const FinancialReports: React.FC = () => {
-  const { currentWaqfId, showToast, currentYear, role } = useUi();
+  const { currentWaqfId, showToast, role } = useUi();
+  const currentYear = CURRENT_YEAR; // دورة التقييم الحالية (من الإعدادات)
   const [loading, setLoading] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const navigate = useNavigate();
@@ -51,9 +52,8 @@ const FinancialReports: React.FC = () => {
           const progress = getInstitutionProgress(currentWaqfId);
           setIsLocked(progress.isLocked);
 
-          const records = getFinancialRecords(currentWaqfId);
-          // Use global currentYear to find record
-          const existing = records.find(r => r.fiscal_year === currentYear);
+          // قوائم الدورة: سنة الدورة أو السنة التي قبلها (حسب آخر قوائم معتمدة لدى المؤسسة)
+          const existing = getCycleFinancial(currentWaqfId, currentYear);
           if (existing) {
               setRecord(existing);
               setPdfFile(existing.audit_report_pdf || null);
@@ -61,7 +61,7 @@ const FinancialReports: React.FC = () => {
               setIsConfirmed(true); // If loaded, assume confirmed previously
           } else {
               setRecord({
-                  fiscal_year: currentYear, // Use global currentYear
+                  fiscal_year: currentYear - 1, // غالباً تكون آخر قوائم مدققة لدى المؤسسة للسنة السابقة
                   auditor_name: '',
                   total_assets: 0,
                   total_liabilities: 0,
@@ -145,14 +145,19 @@ const FinancialReports: React.FC = () => {
       }
   };
 
-  const handleSubmit = () => {
-      if (!currentWaqfId || isLocked) return;
+  // سجل آخر لنفس المؤسسة بنفس السنة المالية (لا يُسمح بسجلين لسنة واحدة)
+  const duplicateYear = !!currentWaqfId && getFinancialRecords(currentWaqfId).some(r => r.fiscal_year === record.fiscal_year && r.id !== record.id);
+
+  const handleSubmit = async () => {
+      if (!currentWaqfId || isLocked || loading) return;
       if (!isConfirmed) {
           showToast('يرجى الإقرار بصحة البيانات قبل الحفظ', 'error');
           return;
       }
-
-      setLoading(true);
+      if (duplicateYear) {
+          showToast(`توجد قوائم مالية مسجلة لسنة ${record.fiscal_year}`, 'error');
+          return;
+      }
 
       const fullRecord: FinancialRecord = {
           ...record as FinancialRecord,
@@ -166,20 +171,32 @@ const FinancialReports: React.FC = () => {
       };
 
       const analysis = analyzeFinancialHealth(fullRecord);
+      setAnalysisResult(analysis);
+      // الأخطاء تمنع الحفظ؛ الملاحظات لا تمنعه
+      if (analysis.errors.length) {
+          showToast('لم يتم الحفظ: صحّح الأخطاء الموضحة أعلاه', 'error');
+          return;
+      }
       fullRecord.status = analysis.status as any;
       fullRecord.flags = analysis.flags;
 
-      saveFinancialRecord(fullRecord);
-      setAnalysisResult(analysis);
+      setLoading(true);
+      try {
+          await saveFinancialRecord(fullRecord);
+      } catch {
+          setLoading(false);
+          return; // رسالة الخطأ تظهر وتبقى حتى يغلقها المستخدم
+      }
+      setRecord(fullRecord);
       setLoading(false);
-      setJustSaved(!analysis.errors?.length);
+      setJustSaved(true);
 
-      // بلا أخطاء ولا تنبيهات: انتقال مباشر للخطوة التالية؛ وإلا تبقى الصفحة لعرض الملاحظات
-      if (!analysis.errors?.length && !analysis.flags?.length && role === 'user') {
+      // بلا ملاحظات: انتقال مباشر للخطوة التالية؛ وإلا تبقى الصفحة لعرض الملاحظات
+      if (!analysis.flags.length && role === 'user') {
           showToast('تم حفظ البيانات المالية', 'success');
           navigate('/evaluation');
       } else {
-          showToast(analysis.errors?.length ? 'تم الحفظ، راجع الأخطاء الموضحة أدناه' : 'تم الحفظ مع ملاحظات موضحة أدناه', analysis.errors?.length ? 'error' : 'info');
+          showToast(analysis.flags.length ? 'تم الحفظ مع ملاحظات موضحة أعلاه' : 'تم حفظ البيانات المالية', analysis.flags.length ? 'info' : 'success');
       }
   };
 
@@ -202,13 +219,22 @@ const FinancialReports: React.FC = () => {
           <div className="flex items-center gap-3">
               <div>
                 <h2 className="text-2xl font-bold text-navy-900 flex items-center gap-2">
-                    <Landmark className="text-teal-600"/> القوائم المالية والحوكمة ({currentYear})
+                    <Landmark className="text-teal-600" aria-hidden="true"/> القوائم المالية
                 </h2>
                 <p className="mt-1 font-bold text-navy-800">{currentInstitutionName}</p>
               </div>
               {isLocked && <span className="bg-gray-200 text-gray-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1"><Lock size={12}/> للقراءة فقط</span>}
           </div>
           <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+              <div>
+                  <label htmlFor="fiscal_year" className="block text-xs font-bold text-gray-500 mb-1">السنة المالية للقوائم</label>
+                  <select id="fiscal_year" disabled={isLocked} value={record.fiscal_year}
+                      onChange={e => handleInputChange('fiscal_year', Number(e.target.value))}
+                      className="min-h-[40px] rounded-lg border border-gray-300 bg-white px-3 text-sm font-bold disabled:bg-gray-100">
+                      {[currentYear, currentYear - 1].map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                  {duplicateYear && <p role="alert" className="mt-1 text-xs font-bold text-red-600">توجد قوائم مسجلة لهذه السنة</p>}
+              </div>
               <fieldset className="min-w-0">
                   <legend className="block text-xs font-bold text-gray-500 mb-1">نوع القوائم</legend>
                   <div className="flex rounded-lg border border-gray-300 bg-white p-1 text-sm font-bold">
@@ -220,9 +246,11 @@ const FinancialReports: React.FC = () => {
                       ))}
                   </div>
               </fieldset>
-              {!record.unaudited && <div className="min-w-[250px]">
-                  <label className="block text-xs font-bold text-gray-500 mb-1">مكتب التدقيق الخارجي</label>
+ {!record.unaudited && <div className="min-w-[250px]">
+                  <label htmlFor="auditor_name" className="block text-xs font-bold text-gray-500 mb-1">مكتب التدقيق الخارجي (مطلوب)</label>
                   <input 
+                    id="auditor_name"
+                    required
                     type="text" 
                     disabled={isLocked}
                     placeholder="مثال: مكتب الهدى للتدقيق"
@@ -245,13 +273,13 @@ const FinancialReports: React.FC = () => {
                   )}
                   <div>
                       <h4 className={`font-bold ${analysisResult.status === 'Flagged' ? 'text-red-800' : 'text-green-800'}`}>
-                          {analysisResult.status === 'Flagged' ? 'تم رصد ملاحظات حوكمة' : (!analysisResult.isValid ? 'خطأ في البيانات' : 'البيانات سليمة')}
+                          {!analysisResult.isValid ? 'أخطاء تمنع الحفظ' : analysisResult.status === 'Flagged' ? 'ملاحظات مالية' : 'لا توجد ملاحظات'}
                       </h4>
                       <ul className="mt-2 space-y-1 text-sm list-disc list-inside">
                           {analysisResult.errors.map((err, i) => <li key={`e-${i}`} className="text-red-700 font-bold">{err}</li>)}
                           {analysisResult.flags.map((flag, i) => <li key={`f-${i}`} className="text-red-600">{flag}</li>)}
                           {analysisResult.isValid && analysisResult.flags.length === 0 && (
-                              <li className="text-green-700">المعادلة المحاسبية متزنة والمصروفات الإدارية في الحدود المسموحة.</li>
+                              <li className="text-green-700">لم تظهر ملاحظات على الأرقام المدخلة.</li>
                           )}
                       </ul>
                   </div>
@@ -269,18 +297,18 @@ const FinancialReports: React.FC = () => {
               </div>
               <div className="p-4 space-y-4">
                   <div>
-                       <label className="block text-xs font-bold text-gray-600 mb-1 flex items-center gap-1">إجمالي الأصول <Info size={13} className="text-gray-400" title="أدخل القيمة الإجمالية لأصول المؤسسة في نهاية السنة المالية." /></label>
-                      <input type="number" disabled={isLocked} className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
+                       <label htmlFor="fin_total_assets" className="block text-xs font-bold text-gray-600 mb-1 flex items-center gap-1">إجمالي الأصول <Info size={13} className="text-gray-400" title="أدخل القيمة الإجمالية لأصول المؤسسة في نهاية السنة المالية." /></label>
+                      <input id="fin_total_assets" type="number" disabled={isLocked} className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
                            placeholder="مثال: 120000" value={record.total_assets || ''} onChange={(e) => handleInputChange('total_assets', Number(e.target.value))} />
                   </div>
                   <div>
-                       <label className="block text-xs font-bold text-gray-600 mb-1 flex items-center gap-1">إجمالي الالتزامات <Info size={13} className="text-gray-400" title="أدخل إجمالي الالتزامات المالية المستحقة على المؤسسة." /></label>
-                      <input type="number" disabled={isLocked} className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
+                       <label htmlFor="fin_total_liabilities" className="block text-xs font-bold text-gray-600 mb-1 flex items-center gap-1">إجمالي الالتزامات <Info size={13} className="text-gray-400" title="أدخل إجمالي الالتزامات المالية المستحقة على المؤسسة." /></label>
+                      <input id="fin_total_liabilities" type="number" disabled={isLocked} className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-blue-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
                            placeholder="مثال: 18000" value={record.total_liabilities || ''} onChange={(e) => handleInputChange('total_liabilities', Number(e.target.value))} />
                   </div>
                   <div className="pt-2 border-t border-gray-100">
-                       <label className="block text-xs font-bold text-navy-900 mb-1 flex items-center gap-1">صافي أصول الوقف <Info size={13} className="text-gray-400" title="يُحتسب تلقائياً بطرح إجمالي الالتزامات من إجمالي الأصول." /></label>
-                      <input 
+                       <label htmlFor="fin_net_waqf_assets" className="block text-xs font-bold text-navy-900 mb-1 flex items-center gap-1">صافي أصول الوقف <Info size={13} className="text-gray-400" title="يُحتسب تلقائياً بطرح إجمالي الالتزامات من إجمالي الأصول." /></label>
+                      <input id="fin_net_waqf_assets" 
                         type="number" 
                         readOnly
                         className="w-full p-2 border border-gray-300 rounded-lg font-bold bg-gray-100 text-navy-900 outline-none"
@@ -298,13 +326,13 @@ const FinancialReports: React.FC = () => {
               </div>
               <div className="p-4 space-y-4">
                   <div>
-                       <label className="block text-xs font-bold text-gray-600 mb-1 flex items-center gap-1">الإيرادات <Info size={13} className="text-gray-400" title="أدخل مجموع إيرادات المؤسسة خلال السنة المالية." /></label>
-                      <input type="number" disabled={isLocked} className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-teal-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
+                       <label htmlFor="fin_total_revenues" className="block text-xs font-bold text-gray-600 mb-1 flex items-center gap-1">الإيرادات <Info size={13} className="text-gray-400" title="أدخل مجموع إيرادات المؤسسة خلال السنة المالية." /></label>
+                      <input id="fin_total_revenues" type="number" disabled={isLocked} className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-teal-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
                            placeholder="مثال: 120000" value={record.total_revenues || ''} onChange={(e) => handleInputChange('total_revenues', Number(e.target.value))} />
                   </div>
                   <div>
-                       <label className="block text-xs font-bold text-gray-600 mb-1 flex items-center gap-1">المصروفات <Info size={13} className="text-gray-400" title="أدخل مجموع المصروفات التي تكبدتها المؤسسة خلال السنة المالية." /></label>
-                      <input type="number" disabled={isLocked} className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-teal-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
+                       <label htmlFor="fin_total_expenses" className="block text-xs font-bold text-gray-600 mb-1 flex items-center gap-1">المصروفات <Info size={13} className="text-gray-400" title="أدخل مجموع المصروفات التي تكبدتها المؤسسة خلال السنة المالية." /></label>
+                      <input id="fin_total_expenses" type="number" disabled={isLocked} className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-teal-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
                            placeholder="مثال: 85000" value={record.total_expenses || ''} onChange={(e) => handleInputChange('total_expenses', Number(e.target.value))} />
                   </div>
                   <div className="pt-2 border-t border-gray-100">
@@ -345,10 +373,10 @@ const FinancialReports: React.FC = () => {
                       </div>
                   </div>
                   <div className="pt-2 border-t border-gray-100">
-                      <label className="block text-xs font-bold text-navy-900 mb-1 flex items-center gap-1"><Banknote size={14}/> صافي النقد (نهاية السنة)</label>
-                      <input type="number" readOnly className="w-full p-2 border border-gray-300 rounded-lg font-bold bg-gray-100 text-orange-900 outline-none"
+                      <label htmlFor="net_cash_change" className="block text-xs font-bold text-navy-900 mb-1 flex items-center gap-1"><Banknote size={14} aria-hidden="true"/> صافي التغير في النقد خلال السنة</label>
+                      <input id="net_cash_change" type="number" readOnly className="w-full p-2 border border-gray-300 rounded-lg font-bold bg-gray-100 text-orange-900 outline-none"
                           value={record.cash_end_period ?? ''} placeholder="—" />
-                      <p className="text-[10px] text-gray-400 mt-1">(تشغيلي + استثماري + تمويلي)</p>
+                      <p className="text-[10px] text-gray-500 mt-1">يُحسب تلقائياً: تشغيلي + استثماري + تمويلي (وليس رصيد النقد آخر السنة)</p>
                   </div>
               </div>
           </div>
@@ -360,8 +388,8 @@ const FinancialReports: React.FC = () => {
               </div>
               <div className="p-4 space-y-4 h-full">
                   <div>
-                       <label className="block text-xs font-bold text-gray-600 mb-1 flex items-center gap-1">المصاريف الإدارية <Info size={13} className="text-gray-400" title="أدخل إجمالي المصاريف الإدارية والرواتب ضمن مصروفات السنة." /></label>
-                       <input type="number" disabled={isLocked} placeholder="مثال: 12000" className="w-full p-2 border border-gray-200 rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-purple-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
+                       <label htmlFor="fin_admin_general_expenses" className="block text-xs font-bold text-gray-600 mb-1 flex items-center gap-1">المصاريف الإدارية <Info size={13} className="text-gray-400" title="أدخل إجمالي المصاريف الإدارية والرواتب ضمن مصروفات السنة." /></label>
+                       <input id="fin_admin_general_expenses" type="number" disabled={isLocked} placeholder="مثال: 12000" className="w-full p-2 border border-gray-200 rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-purple-500 outline-none disabled:bg-gray-100 disabled:text-gray-500" 
                           value={record.admin_general_expenses || ''} onChange={(e) => handleInputChange('admin_general_expenses', Number(e.target.value))} />
                       
                       {(record.total_expenses || 0) > 0 && (
@@ -373,7 +401,7 @@ const FinancialReports: React.FC = () => {
                   </div>
                   
                   <div className="pt-3 border-t border-gray-100">
-                       <label htmlFor="beneficiary_distributions" className="block text-xs font-bold text-gray-600 mb-1">المبالغ المصروفة على مصارف الوقف (الموقوف عليهم)</label>
+                       <label htmlFor="beneficiary_distributions" className="block text-xs font-bold text-gray-600 mb-1">المصروف على الموقوف عليهم</label>
                        <input id="beneficiary_distributions" type="number" disabled={isLocked} placeholder="مثال: 40000" className="w-full p-2 border border-gray-200 rounded-lg bg-gray-50 focus:bg-white focus:ring-1 focus:ring-purple-500 outline-none disabled:bg-gray-100 disabled:text-gray-500"
                           value={record.beneficiary_distributions ?? ''} onChange={(e) => handleInputChange('beneficiary_distributions', optionalNumber(e.target.value))} />
                       {(record.total_expenses || 0) > 0 && record.beneficiary_distributions !== undefined && (
@@ -406,7 +434,7 @@ const FinancialReports: React.FC = () => {
                                   <span className="text-xs opacity-70">{pdfFile.size} - تم الرفع</span>
                               </div>
                           </div>
-                          {!isLocked && <button onClick={removeReportFile} className="text-red-500 hover:bg-red-100 p-2 rounded-full transition-colors"><XCircle size={20}/></button>}
+                          {!isLocked && <button type="button" onClick={removeReportFile} aria-label="حذف المرفق" className="text-red-500 hover:bg-red-100 p-2 rounded-full transition-colors"><XCircle size={20} aria-hidden="true"/></button>}
                       </div>
                   ) : (
                       <label className={`flex flex-col items-center justify-center gap-3 w-full h-32 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 text-gray-500 cursor-pointer hover:bg-gray-100 hover:border-blue-400 transition-all group ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}>

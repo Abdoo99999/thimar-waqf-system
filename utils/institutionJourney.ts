@@ -4,7 +4,11 @@ import {
   getImprovements,
   getInstitutionProgress,
 } from '../services/db';
-import type { Institution } from '../types';
+import type { Institution, ImprovementItem } from '../types';
+
+// بند الخطة مكتمل إذا حُدد فيه الإجراء والمسؤول والموعد
+export const isImprovementComplete = (i: ImprovementItem) =>
+  !!(i.recommended_action || '').trim() && !/^مرتبط بمؤشر رقم/.test(i.recommended_action) && !!(i.owner || '').trim() && !!i.due_date;
 
 export const JOURNEY_STEPS = [
   { title: 'بيانات المؤسسة', path: '/institutions', flag: 'dataComplete' },
@@ -31,7 +35,9 @@ export const getInstitutionJourney = (institutionId: string): InstitutionJourney
   const progress = getInstitutionProgress(institutionId);
   const evaluation = getEvaluationByInstAndYear(institutionId, CURRENT_YEAR);
   const workflowStatus = (evaluation?.workflow_status || 'draft') as WorkflowStatus;
-  const improvementsDone = (!!evaluation && getImprovements(evaluation.id).length > 0) || workflowStatus === 'submitted' || workflowStatus === 'approved';
+  const items = evaluation ? getImprovements(evaluation.id) : [];
+  const itemsComplete = items.length > 0 && items.every(isImprovementComplete);
+  const improvementsDone = (!!evaluation && (itemsComplete || (items.length === 0 && !!evaluation.no_improvements))) || workflowStatus === 'submitted' || workflowStatus === 'approved';
   const completed = [
     progress.dataComplete,
     progress.financialsDone,

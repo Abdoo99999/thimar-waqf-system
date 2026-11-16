@@ -28,7 +28,7 @@ export const ChangePasswordModal: React.FC<{ forced: boolean; onClose: () => voi
 
   const input = 'w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none';
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[90] p-4" dir="rtl">
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[90] p-4" dir="rtl" role="dialog" aria-modal="true" aria-label="تغيير كلمة المرور">
       <form onSubmit={submit} className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 rounded-full bg-teal-100 flex items-center justify-center shrink-0">
@@ -67,7 +67,8 @@ export const ChangePasswordModal: React.FC<{ forced: boolean; onClose: () => voi
 export interface CredentialRow { institution_id: string; login_code: string; password: string; name?: string; }
 
 export const downloadCredentialsCsv = (rows: CredentialRow[]) => {
-  const esc = (v: string) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  // خلية تبدأ بـ = + - @ قد ينفذها Excel كمعادلة: نسبقها بفاصلة عليا
+  const esc = (v: string) => { let t = String(v ?? ''); if (/^[=+\-@\t\r]/.test(t)) t = `'${t}`; return `"${t.replace(/"/g, '""')}"`; };
   const csv = '﻿' + ['اسم المؤسسة,رمز الدخول,كلمة المرور', ...rows.map(r => [esc(r.name || ''), esc(r.login_code), esc(r.password)].join(','))].join('\r\n');
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   const a = document.createElement('a');
@@ -94,7 +95,7 @@ export const CredentialsModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[90] p-4" dir="rtl">
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[90] p-4" dir="rtl" role="dialog" aria-modal="true" aria-label="بيانات الدخول">
       <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 max-h-[90vh] flex flex-col">
         <h3 className="text-lg font-bold text-navy-900 mb-1">{state.title}</h3>
         <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">

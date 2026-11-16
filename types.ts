@@ -111,6 +111,12 @@ export interface Evaluation {
   approver_name?: string;
   approver_title?: string;
   report_benchmark?: ReportBenchmark; // متوسط المؤسسات وقت الاعتماد
+  report_snapshot?: Record<string, any>; // نسخة ثابتة من التقرير لحظة الاعتماد (لا تتغير بعدها)
+
+  // الإقرار عند الرفع
+  declarant_name?: string;
+  declarant_title?: string;
+  no_improvements?: boolean; // أقرت المؤسسة بعدم وجود بنود تحسين
 
   attachments?: InstitutionDocument[];
   created_at: string;

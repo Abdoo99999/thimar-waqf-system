@@ -1,10 +1,11 @@
 // بيانات التقرير الرسمي للمؤسسة: تُحسب من بيانات المؤسسة، والمقارنة بالمتوسط تُحفظ عند الاعتماد
 import {
   getInstitutions, getEvaluations, getResponses, getIndicators, getRisks,
-  getComplianceByInstAndYear, getImprovements, getFinancialRecords,
+  getComplianceByInstAndYear, getImprovements, getCycleFinancial,
 } from '../services/db';
 import { summarizeCompliance, getAutoChecks, riskLevel, RISK_LEVEL_LABEL } from './compliance';
 import { Evaluation, Indicator, ReportBenchmark } from '../types';
+import { scoreResponses } from './score';
 
 export type Tone = 'good' | 'warn' | 'bad' | 'info';
 
@@ -22,22 +23,10 @@ const planTitle = (i: { recommended_action?: string; issue_summary?: string }) =
   return (auto ? (i.issue_summary || action) : action).replace(/\.\.\.$/, '…');
 };
 
-const toPct = (avg: number) => Math.round((avg / 5) * 100);
-
 // درجة تقييم واحد: الإجمالي ولكل محور (نسبة مئوية من 5)
 export const evaluationScores = (evaluationId: string, indicators: Indicator[]) => {
-  const responses = getResponses(evaluationId).filter(r => r.score > 0);
-  const axes: Record<string, { t: number; n: number }> = {};
-  responses.forEach(r => {
-    const ind = indicators.find(i => i.id === r.indicator_id);
-    if (!ind) return;
-    (axes[ind.axis] ||= { t: 0, n: 0 });
-    axes[ind.axis].t += r.score; axes[ind.axis].n++;
-  });
-  const overall = responses.length ? toPct(responses.reduce((a, r) => a + r.score, 0) / responses.length) : 0;
-  const pillars: Record<string, number> = {};
-  Object.entries(axes).forEach(([k, v]) => { pillars[k] = toPct(v.t / v.n); });
-  return { overall, pillars, count: responses.length };
+  const axis = new Map(indicators.map(i => [i.id, i.axis] as const));
+  return scoreResponses(getResponses(evaluationId), id => axis.get(id));
 };
 
 // متوسط المؤسسات التي رفعت تقييمها في الدورة نفسها (يُحسب عند المدير فقط)
@@ -70,7 +59,7 @@ export const nextReportRef = (year: number) => {
 export const formatDate = (iso?: string) =>
   iso ? new Date(iso).toLocaleDateString('ar-OM-u-nu-latn', { year: 'numeric', month: 'long', day: 'numeric' }) : '—';
 
-const money = (n: number) => `${Math.round(n).toLocaleString('en-US')} ر.ع`;
+const money = (n: number) => `${Math.round(n).toLocaleString('en-US')} ر.ع.`;
 
 export interface ReportModel {
   institutionName: string;
@@ -125,8 +114,7 @@ export const buildReport = (institutionId: string, year: number, liveBenchmark?:
     .map(ax => ({ name: ax, inst: scores.pillars[ax], avg: benchmark.pillars[ax] }));
 
   // المؤشرات المالية
-  const fins = getFinancialRecords(institutionId);
-  const f = fins.find(x => x.fiscal_year === year) || fins.find(x => x.fiscal_year === year - 1);
+  const f = getCycleFinancial(institutionId, year);
   let financial: ReportModel['financial'] = null;
   if (f) {
     const rows: NonNullable<ReportModel['financial']>['rows'] = [];

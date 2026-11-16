@@ -3,6 +3,7 @@ import DeadlineNotice from '../components/DeadlineNotice';
 import { Save, Download, Upload, RefreshCw } from 'lucide-react';
 import { getSettings, saveSettings, refreshData, exportBackup, importBackup } from '../services/db';
 import { useUi } from '../contexts/UiContext';
+import { CURRENT_YEAR } from '../constants';
 
 const Settings: React.FC = () => {
   const [formData, setFormData] = useState<any>({
@@ -28,13 +29,24 @@ const Settings: React.FC = () => {
   const [deadline, setDeadline] = useState<string>(getSettings().evaluation_deadline || '');
   const saveDeadline = (value: string) => {
       setDeadline(value);
-      saveSettings({ ...getSettings(), evaluation_deadline: value || undefined });
+      saveSettings({ ...getSettings(), evaluation_deadline: value || undefined }).catch(() => {});
       showToast(value ? 'تم حفظ الموعد النهائي وسيظهر للمؤسسات' : 'تم إلغاء الموعد النهائي', 'success');
+  };
+
+  // دورة التقييم الحالية: تحدد السنة التي تعمل عليها المؤسسات وتظهر في التقارير وطلبات الاعتماد
+  const [cycle, setCycle] = useState<number>(CURRENT_YEAR);
+  const [confirmCycle, setConfirmCycle] = useState(false);
+  const saveCycle = async () => {
+      try {
+          await saveSettings({ ...getSettings(), current_cycle: cycle });
+          showToast(`دورة التقييم الحالية: ${cycle}`, 'success');
+      } catch { setCycle(CURRENT_YEAR); }
+      setConfirmCycle(false);
   };
 
   const handleSave = () => {
       // نحافظ على باقي الإعدادات (مثل وضع العرض والموعد النهائي) عند الحفظ
-      saveSettings({ ...getSettings(), ...formData, darkMode: false });
+      saveSettings({ ...getSettings(), ...formData, darkMode: false }).catch(() => {});
       showToast('تم حفظ الإعدادات بنجاح', 'success');
   };
 
@@ -130,6 +142,37 @@ const Settings: React.FC = () => {
         </div>
       </div>
 
+      {/* Evaluation cycle */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="p-6 border-b border-gray-100">
+            <h3 className="font-bold text-lg mb-2 text-navy-900">دورة التقييم الحالية</h3>
+            <p className="text-gray-500 text-sm">السنة التي تعمل عليها المؤسسات الآن. لا تتغير تلقائياً مع بداية السنة؛ غيّرها عند فتح دورة جديدة. تقارير الدورات السابقة وطلباتها تبقى متاحة.</p>
+        </div>
+        <div className="p-6 flex flex-col sm:flex-row sm:items-end gap-4">
+            <div>
+                <label htmlFor="cycle" className="block text-sm font-medium mb-1 text-gray-700">الدورة</label>
+                <select id="cycle" value={cycle} onChange={e => { setCycle(Number(e.target.value)); setConfirmCycle(false); }}
+                    className="min-h-[44px] p-2 border rounded-lg bg-gray-50 text-gray-900 border-gray-200 outline-none focus:ring-2 focus:ring-navy-800 font-bold">
+                    {Array.from(new Set([CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1, new Date().getFullYear()])).sort().map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+            </div>
+            {cycle !== CURRENT_YEAR && !confirmCycle && (
+                <button type="button" onClick={() => setConfirmCycle(true)} className="min-h-[44px] bg-navy-800 text-white px-5 rounded-lg flex items-center gap-2 hover:bg-navy-900 font-medium">
+                    <Save size={18} aria-hidden="true" /> تغيير الدورة
+                </button>
+            )}
+        </div>
+        {confirmCycle && (
+            <div role="alert" className="mx-6 mb-6 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 space-y-3">
+                <p>ستعمل كل المؤسسات على دورة <strong>{cycle}</strong> بدلاً من {CURRENT_YEAR}: تبدأ بتقييم جديد، وتُفتح بياناتها للتعديل لهذه الدورة. التقييمات والتقارير السابقة لا تتأثر.</p>
+                <div className="flex gap-2">
+                    <button type="button" onClick={saveCycle} className="min-h-[44px] px-4 rounded-lg bg-navy-800 text-white font-bold">نعم، غيّر الدورة</button>
+                    <button type="button" onClick={() => { setConfirmCycle(false); setCycle(CURRENT_YEAR); }} className="min-h-[44px] px-4 rounded-lg bg-white border border-gray-300 font-bold">إلغاء</button>
+                </div>
+            </div>
+        )}
+      </div>
+
       {/* Evaluation deadline */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-6 border-b border-gray-100">
@@ -174,7 +217,7 @@ const Settings: React.FC = () => {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-6 border-b border-gray-100">
             <h3 className="font-bold text-lg mb-2 text-blue-600">النسخ الاحتياطي واستعادة البيانات</h3>
-            <p className="text-gray-500 text-sm">تنزيل نسخة من بيانات النظام في الخادم، أو استعادتها. كلمات المرور لا تدخل في النسخة.</p>
+            <p className="text-gray-500 text-sm">تنزيل نسخة من بيانات النظام في الخادم، أو استعادتها. تشمل النسخة رموز دخول المؤسسات وحسابات مستخدمي الوزارة بكلمات مرورها المشفّرة، فتعود كما هي عند الاستعادة.</p>
         </div>
         <div className="p-6 flex flex-wrap gap-3">
             <button onClick={exportData} className="min-h-[44px] border border-blue-600 text-blue-600 px-4 py-2 rounded-lg hover:bg-blue-50 flex items-center gap-2 transition-colors font-medium">
@@ -202,7 +245,7 @@ const Settings: React.FC = () => {
                 </div>
             </div>
         )}
-        <p className="px-6 pb-6 text-xs text-gray-500">النسخ الاحتياطية تحتوي بيانات المؤسسات وملفاتها؛ احفظها في مكان آمن ولا ترسلها عبر قنوات غير رسمية.</p>
+        <p className="px-6 pb-6 text-xs text-gray-500">النسخ الاحتياطية تحتوي بيانات المؤسسات وملفاتها وبيانات الدخول المشفّرة؛ احفظها في مكان آمن ولا ترسلها عبر قنوات غير رسمية.</p>
       </div>
     </div>
   );

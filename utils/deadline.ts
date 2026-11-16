@@ -9,15 +9,25 @@ export const getDeadline = (): DeadlineInfo | null => {
   if (!date) return null;
   const end = new Date(`${date}T23:59:59`);
   if (isNaN(end.getTime())) return null;
-  const daysLeft = Math.ceil((end.getTime() - Date.now()) / 86400000);
+  // الفرق بالأيام التقويمية: يوم الموعد = 0، اليوم الذي بعده = -1
+  const startOf = (d: Date) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  const daysLeft = Math.round((startOf(end) - startOf(new Date())) / 86400000);
   const tone: DeadlineTone = daysLeft < 0 ? 'passed' : daysLeft <= 3 ? 'urgent' : daysLeft <= 14 ? 'soon' : 'ok';
-  const label = daysLeft < 0 ? `انتهى الموعد منذ ${Math.abs(daysLeft)} يوماً`
+  const ago = Math.abs(daysLeft);
+  const label = daysLeft < 0 ? (ago === 1 ? 'انتهى الموعد أمس' : ago === 2 ? 'انتهى الموعد منذ يومين' : `انتهى الموعد منذ ${ago} ${ago <= 10 ? 'أيام' : 'يوماً'}`)
     : daysLeft === 0 ? 'اليوم آخر يوم للرفع'
     : daysLeft === 1 ? 'باقي يوم واحد'
     : daysLeft === 2 ? 'باقي يومان'
     : daysLeft <= 10 ? `باقي ${daysLeft} أيام` : `باقي ${daysLeft} يوماً`;
   const dateLabel = end.toLocaleDateString('ar-OM-u-nu-latn', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   return { date, daysLeft, tone, label, dateLabel };
+};
+
+// هل رُفع التقييم في موعده؟ (حتى نهاية يوم الموعد)
+export const submittedOnTime = (submissionIso?: string) => {
+  const date: string | undefined = getSettings().evaluation_deadline;
+  if (!date || !submissionIso) return true;
+  return new Date(submissionIso).getTime() <= new Date(`${date}T23:59:59`).getTime();
 };
 
 export const DEADLINE_STYLE: Record<DeadlineTone, string> = {

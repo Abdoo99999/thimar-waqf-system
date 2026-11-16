@@ -14,7 +14,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { CURRENT_YEAR } from '../constants';
-import { getInstitutions } from '../services/db';
+import { getInstitutions, getEvaluationByInstAndYear } from '../services/db';
 import { useUi } from '../contexts/UiContext';
 import type { Institution } from '../types';
 import {
@@ -113,7 +113,7 @@ const InstitutionHome: React.FC = () => {
         </div>
       </section>
 
-      <DeadlineNotice done={journey.workflowStatus === 'submitted' || journey.workflowStatus === 'approved'} />
+      <DeadlineNotice done={journey.workflowStatus === 'submitted' || journey.workflowStatus === 'approved'} submittedAt={currentWaqfId ? getEvaluationByInstAndYear(currentWaqfId, CURRENT_YEAR)?.submission_date : undefined} />
 
       <section className={`rounded-2xl border p-5 sm:p-6 ${status.className}`} aria-live="polite">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

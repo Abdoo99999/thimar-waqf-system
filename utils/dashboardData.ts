@@ -3,6 +3,7 @@ import type { Institution, Evaluation, Response, FinancialRecord, RiskRegisterIt
 import { summarizeCompliance, getAutoChecks, riskLevel, RISK_CATEGORY_LABEL } from './compliance';
 import { getInstitutionProgressSummary } from './institutionJourney';
 import { scoreLevel } from './report';
+import { scoreResponses } from './score';
 import { CURRENT_YEAR } from '../constants';
 
 export interface DashSource {
@@ -41,7 +42,6 @@ export const BRACKETS = [
 ];
 
 const hash = (s: string) => Array.from(s).reduce((v, c) => (v * 31 + c.charCodeAt(0)) >>> 0, 7);
-const pctOf = (avg: number) => Math.round((avg / 5) * 100);
 const DAY = 86400000;
 
 export interface AttentionItem { id: string; name: string; tags: { text: string; tone: 'bad' | 'warn' | 'info' }[]; weight: number }
@@ -163,11 +163,8 @@ export const buildDashboard = (src: DashSource, year: number, instId: string | n
   src.responses.forEach(r => { if (r.score > 0) { const a = respByEval.get(r.evaluation_id) || []; a.push(r); respByEval.set(r.evaluation_id, a); } });
   const indById = new Map(src.indicators.map(i => [i.id, i] as const));
   const scores = counted.map(e => {
-    const rs = respByEval.get(e.id) || [];
-    const axes: Record<string, { t: number; n: number }> = {};
-    rs.forEach(r => { const ax = indById.get(r.indicator_id)?.axis; if (!ax) return; (axes[ax] ||= { t: 0, n: 0 }); axes[ax].t += r.score; axes[ax].n++; });
-    return { inst: e.institution_id, n: rs.length, overall: rs.length ? pctOf(rs.reduce((a, r) => a + r.score, 0) / rs.length) : 0,
-      axes: Object.fromEntries(Object.entries(axes).map(([k, v]) => [k, pctOf(v.t / v.n)])) as Record<string, number> };
+    const sc = scoreResponses(respByEval.get(e.id) || [], id => indById.get(id)?.axis);
+    return { inst: e.institution_id, n: sc.count, overall: sc.overall, axes: sc.pillars };
   }).filter(s => s.n > 0);
   const avg = (xs: number[]) => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : 0);
   const overall = avg(scores.map(s => s.overall));
@@ -183,7 +180,14 @@ export const buildDashboard = (src: DashSource, year: number, instId: string | n
   const compliance = avg([...compByInst.values()]);
 
   // ── 4. المالية ──
-  const fins = src.financials.filter(f => f.fiscal_year === year && ids.has(f.institution_id));
+  // نفس قاعدة التقرير: قوائم سنة الدورة لكل مؤسسة، وإلا قوائم السنة التي قبلها
+  const finByInst = new Map<string, FinancialRecord>();
+  src.financials.forEach(f => {
+    if (!ids.has(f.institution_id) || (f.fiscal_year !== year && f.fiscal_year !== year - 1)) return;
+    const cur = finByInst.get(f.institution_id);
+    if (!cur || (cur.fiscal_year !== year && f.fiscal_year === year)) finByInst.set(f.institution_id, f);
+  });
+  const fins = [...finByInst.values()];
   const sum = (k: keyof FinancialRecord) => fins.reduce((a, f) => a + (Number(f[k]) || 0), 0);
   const withBenef = fins.filter(f => f.beneficiary_distributions !== undefined && f.beneficiary_distributions !== null);
   const benef = withBenef.reduce((a, f) => a + (Number(f.beneficiary_distributions) || 0), 0);

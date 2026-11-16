@@ -180,14 +180,14 @@ const CompliancePage: React.FC = () => {
 
   // ─── الحفظ ──────────────────────────────────────────────────────────────
   const persist = (completed: boolean) => {
-    if (!currentWaqfId) return;
+    if (!currentWaqfId) return Promise.resolve();
     const toSave = withLegacyFields({
       ...record, id: record.id || generateId(), institution_id: currentWaqfId, cycle_year: CURRENT_YEAR,
       completed, last_updated_at: new Date().toISOString(),
     }, checks) as ComplianceRecord;
-    saveComplianceRecord(toSave);
     setRecord(normalizeRecord(toSave));
     setDirty(false);
+    return saveComplianceRecord(toSave).catch(e => { setDirty(true); throw e; });
   };
 
   const firstProblem = (): { msg: string; target?: string; riskTab?: boolean } | null => {
@@ -208,10 +208,29 @@ const CompliancePage: React.FC = () => {
     return null;
   };
 
+  // حفظ تلقائي كمسودة بعد ثانيتين من آخر تعديل، فلا تضيع الإجابات عند مغادرة الصفحة
+  const [autoSaved, setAutoSaved] = useState(false);
+  useEffect(() => {
+    if (!dirty || isLocked || !currentWaqfId) return;
+    const t = setTimeout(() => {
+      const stillComplete = !!record.completed && !firstProblem();
+      persist(stillComplete).then(() => setAutoSaved(true), () => {});
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [record, dirty, isLocked, currentWaqfId]);
+
+  // مغادرة الصفحة قبل الحفظ التلقائي: نحفظ فوراً
+  const flushRef = useRef<(() => void) | null>(null);
+  flushRef.current = dirty && !isLocked && currentWaqfId ? () => { persist(!!record.completed && !firstProblem()).catch(() => {}); } : null;
+  useEffect(() => {
+    const onUnload = (e: BeforeUnloadEvent) => { if (flushRef.current) { flushRef.current(); e.preventDefault(); e.returnValue = ''; } };
+    window.addEventListener('beforeunload', onUnload);
+    return () => { window.removeEventListener('beforeunload', onUnload); flushRef.current?.(); };
+  }, []);
+
   const saveDraft = () => {
     if (isLocked) return;
-    persist(false);
-    showToast('تم حفظ المسودة', 'success');
+    persist(false).then(() => showToast('تم حفظ المسودة', 'success'), () => {});
   };
 
   const saveAndContinue = () => {
@@ -229,10 +248,10 @@ const CompliancePage: React.FC = () => {
       return;
     }
     setSaving(true);
-    persist(true);
-    showToast('تم حفظ الامتثال والمخاطر', 'success');
-    setSaving(false);
-    navigate('/improvements');
+    persist(true).then(() => {
+      showToast('تم حفظ الامتثال والمخاطر', 'success');
+      navigate('/improvements');
+    }, () => {}).finally(() => setSaving(false));
   };
 
   // ─── المخاطر (تُحفظ مباشرة مثل السابق) ──────────────────────────────────
@@ -586,7 +605,7 @@ const CompliancePage: React.FC = () => {
       {/* شريط الحفظ: ثابت أسفل الصفحة ولا يغطي المحتوى */}
       <div className="sticky bottom-0 z-20 -mx-4 -mb-4 mt-2 border-t border-slate-200 bg-white px-4 py-3.5 lg:-mx-8 lg:-mb-8 lg:px-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className="text-sm text-slate-600">{footerText}{dirty && !isLocked ? ' · تغييرات غير محفوظة' : ''}</span>
+          <span className="text-sm text-slate-600">{footerText}{!isLocked ? (dirty ? ' · جاري الحفظ التلقائي…' : autoSaved ? ' · حُفظ تلقائياً' : '') : ''}</span>
           {!isLocked && (
             <div className="flex gap-2.5">
               <button type="button" onClick={saveDraft} className="min-h-[44px] rounded-[10px] bg-slate-100 px-5 text-[15px] font-bold hover:bg-slate-200">حفظ كمسودة</button>

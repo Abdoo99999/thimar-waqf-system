@@ -5,8 +5,9 @@ import { useUi } from '../contexts/UiContext';
 import { StepBar } from '../components/StepNav';
 import {
   getEvaluationByInstAndYear, saveEvaluation, getResponses, getComplianceByInstAndYear,
-  getRisks, getImprovements, getFinancialRecords, getInstitutions,
+  getRisks, getImprovements, getInstitutions, getIndicators, getCycleFinancial, refreshData,
 } from '../services/db';
+import { scoreResponses, formatScore } from '../utils/score';
 import { CURRENT_YEAR } from '../constants';
 import { getInstitutionJourney, JOURNEY_STEPS } from '../utils/institutionJourney';
 import { summarizeCompliance, getAutoChecks, riskLevel } from '../utils/compliance';
@@ -30,6 +31,8 @@ const ReviewSubmit: React.FC = () => {
   const [confirming, setConfirming] = useState(false);
   const [sending, setSending] = useState(false);
   const [tick, setTick] = useState(0);
+  const [declarantName, setDeclarantName] = useState('');
+  const [declarantTitle, setDeclarantTitle] = useState('');
 
   useEffect(() => {
     if (currentWaqfId) setEvaluation(getEvaluationByInstAndYear(currentWaqfId, CURRENT_YEAR));
@@ -41,13 +44,13 @@ const ReviewSubmit: React.FC = () => {
     const journey = getInstitutionJourney(currentWaqfId);
     const ev = getEvaluationByInstAndYear(currentWaqfId, CURRENT_YEAR);
     const responses = ev ? getResponses(ev.id) : [];
-    const score = responses.length ? responses.reduce((a, r) => a + (Number(r.score) || 0), 0) / responses.length : null;
+    const axis = new Map(getIndicators().map(i => [i.id, i.axis] as const));
+    const score = scoreResponses(responses, id => axis.get(id));
     const compliance = summarizeCompliance(getComplianceByInstAndYear(currentWaqfId, CURRENT_YEAR), getAutoChecks(currentWaqfId));
     const risks = getRisks(currentWaqfId);
     const highRisks = risks.filter(r => riskLevel(r.probability * r.impact) === 'high').length;
     const improvements = ev ? getImprovements(ev.id) : [];
-    const fins = getFinancialRecords(currentWaqfId);
-    const fin = fins.find(f => f.fiscal_year === CURRENT_YEAR) || fins.find(f => f.fiscal_year === CURRENT_YEAR - 1);
+    const fin = getCycleFinancial(currentWaqfId, CURRENT_YEAR);
 
     // تنبيهات لا تمنع الإرسال لكنها تستحق المراجعة
     const warnings: { text: string; path: string }[] = [];
@@ -72,24 +75,27 @@ const ReviewSubmit: React.FC = () => {
   const canSubmit = role === 'user' && (status === 'draft' || status === 'returned') && prerequisitesDone && !!evaluation;
 
   const handleSubmit = async () => {
-    if (!evaluation || !declared || sending) return;
+    if (!evaluation || !declared || !declarantName.trim() || sending) return;
     setSending(true);
-    const now = new Date().toISOString();
-    const updated: Evaluation = { ...evaluation, workflow_status: 'submitted', submission_date: now, declaration_accepted_at: now };
+    // تاريخ الرفع يضعه الخادم، ولا تظهر رسالة النجاح إلا بعد قبوله
+    const updated: Evaluation = { ...evaluation, workflow_status: 'submitted', declarant_name: declarantName.trim(), declarant_title: declarantTitle.trim() };
     try {
       await saveEvaluation(updated);
-      showToast('تم إرسال التقييم للوزارة بنجاح', 'success');
-      setEvaluation(updated);
+      showToast('تم رفع التقييم للوزارة', 'success');
       setTick(t => t + 1);
-    } catch { /* رسالة الخطأ تظهر تلقائياً */ }
+    } catch {
+      // رُفض الرفع (مثلاً تغيّرت البيانات من جهاز آخر): نحدّث البيانات من الخادم
+      try { await refreshData(); } catch { /* ignore */ }
+      setTick(t => t + 1);
+    }
     finally { setSending(false); setConfirming(false); }
   };
 
   const summary = [
-    { label: 'نتيجة الأداء المؤسسي', value: data.score !== null ? `${data.score.toFixed(1)} / 5` : '—', path: '/evaluation' },
+    { label: 'نتيجة الأداء المؤسسي', value: formatScore(data.score), path: '/evaluation' },
     { label: 'نسبة الامتثال', value: `${data.compliance.pct}%`, path: '/compliance' },
     { label: 'المخاطر المسجلة', value: `${data.risks.length}${data.highRisks ? ` (منها ${data.highRisks} عالية)` : ''}`, path: '/compliance' },
-    { label: 'بنود خطة التحسين', value: `${data.improvements.length}`, path: '/improvements' },
+    { label: 'بنود خطة التحسين', value: data.improvements.length ? `${data.improvements.length}` : evaluation?.no_improvements ? 'لا توجد بنود' : '0', path: '/improvements' },
   ];
 
   return (
@@ -97,7 +103,7 @@ const ReviewSubmit: React.FC = () => {
       <StepBar step={5} />
       <h2 className="text-2xl font-bold text-navy-900">المراجعة والإرسال</h2>
 
-      <DeadlineNotice done={status === 'submitted' || status === 'approved'} />
+      <DeadlineNotice done={status === 'submitted' || status === 'approved'} submittedAt={evaluation?.submission_date} />
 
       {/* الحالة */}
       <section className={`rounded-2xl border p-5 ${banner.cls}`} aria-live="polite">
@@ -105,7 +111,7 @@ const ReviewSubmit: React.FC = () => {
           {status === 'approved' ? <ShieldCheck size={24} /> : status === 'returned' ? <RotateCcw size={22} /> : status === 'submitted' ? <Clock size={22} /> : <Circle size={22} />}
           <h3 className="text-lg font-extrabold">{banner.title}</h3>
           {evaluation?.submission_date && status !== 'draft' && (
-            <span className="text-sm opacity-80">· أُرسل في {fmtDate(evaluation.submission_date)}</span>
+            <span className="text-sm opacity-80">· رُفع في {fmtDate(evaluation.submission_date)}{evaluation.declarant_name ? ` · المُقِرّ: ${evaluation.declarant_name}` : ''}</span>
           )}
         </div>
         {status === 'returned' && journey.adminFeedback && (
@@ -182,11 +188,23 @@ const ReviewSubmit: React.FC = () => {
               <label className="flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4 cursor-pointer">
                 <input type="checkbox" checked={declared} onChange={e => setDeclared(e.target.checked)} className="mt-1 h-5 w-5 accent-teal-600" />
                 <span className="text-sm text-gray-800 leading-relaxed">
-                  أقر بأن البيانات والمرفقات المقدمة صحيحة ومكتملة وفق علمي، وأنها تعكس واقع المؤسسة للسنة {CURRENT_YEAR}.
+                  أقر بأن البيانات والمرفقات المقدمة صحيحة ومكتملة وفق علمي، وأنها تعكس واقع المؤسسة لدورة التقييم {CURRENT_YEAR}.
                 </span>
               </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="flex flex-col gap-1 text-sm font-bold text-gray-700">
+                  اسم المُقِرّ <span className="sr-only">(مطلوب)</span>
+                  <input value={declarantName} onChange={e => setDeclarantName(e.target.value)} required autoComplete="name"
+                    className="min-h-[44px] rounded-lg border border-gray-300 px-3 font-normal outline-none focus:ring-2 focus:ring-teal-500" />
+                </label>
+                <label className="flex flex-col gap-1 text-sm font-bold text-gray-700">
+                  الصفة (مثلاً: رئيس مجلس الإدارة)
+                  <input value={declarantTitle} onChange={e => setDeclarantTitle(e.target.value)} autoComplete="organization-title"
+                    className="min-h-[44px] rounded-lg border border-gray-300 px-3 font-normal outline-none focus:ring-2 focus:ring-teal-500" />
+                </label>
+              </div>
               {!confirming ? (
-                <button type="button" disabled={!declared || !canSubmit} onClick={() => setConfirming(true)}
+                <button type="button" disabled={!declared || !declarantName.trim() || !canSubmit} onClick={() => setConfirming(true)}
                   className="inline-flex min-h-[48px] items-center gap-2 rounded-xl bg-navy-900 px-6 font-bold text-white hover:bg-navy-800 disabled:opacity-40 disabled:cursor-not-allowed">
                   <Send size={18} /> {status === 'returned' ? 'إعادة الإرسال للوزارة' : 'إرسال التقييم للوزارة'}
                 </button>

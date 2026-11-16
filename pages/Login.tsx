@@ -49,7 +49,7 @@ const Login: React.FC = () => {
           <div className="w-40 h-24 sm:w-56 sm:h-32 bg-white rounded-2xl flex items-center justify-center mx-auto mb-3 sm:mb-4 shadow-sm p-2 sm:p-3">
             <img
               src="/logo.png"
-              alt="Logo"
+              alt="شعار وزارة الأوقاف والشؤون الدينية"
               className="w-full h-full object-contain"
               onError={(e) => { e.currentTarget.style.display = 'none'; }}
             />
@@ -73,13 +73,15 @@ const Login: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">رمز الدخول</label>
+            <label htmlFor="login-code" className="block text-sm font-bold text-gray-700 mb-2">رمز الدخول</label>
             <div className="relative">
-              <KeyRound className="absolute top-3 right-3 text-gray-400" size={20} />
+              <KeyRound className="absolute top-3 right-3 text-gray-400" size={20} aria-hidden="true" />
               <input
+                id="login-code"
+                autoComplete="username"
                 type="text"
                 required
-                className="w-full p-3 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-600 outline-none transition-shadow uppercase"
+                className={`w-full p-3 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-600 outline-none transition-shadow ${/^wq/i.test(loginCode) ? 'uppercase' : ''}`}
                 value={loginCode}
                 onChange={(e) => setLoginCode(e.target.value)}
                 placeholder="رمز المؤسسة (مثال: WQ001)"
@@ -89,10 +91,12 @@ const Login: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">كلمة المرور</label>
+            <label htmlFor="login-password" className="block text-sm font-bold text-gray-700 mb-2">كلمة المرور</label>
             <div className="relative">
-              <Lock className="absolute top-3 right-3 text-gray-400" size={20} />
+              <Lock className="absolute top-3 right-3 text-gray-400" size={20} aria-hidden="true" />
               <input
+                id="login-password"
+                autoComplete="current-password"
                 type="password"
                 required
                 className="w-full p-3 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-600 outline-none transition-shadow"

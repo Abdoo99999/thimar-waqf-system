@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Users, UserPlus, Trash2, KeyRound } from 'lucide-react';
 import { fetchStaff, createStaff, updateStaff, deleteStaff, StaffUser } from '../services/db';
 import { useUi } from '../contexts/UiContext';
+import { useEscape } from '../components/Modal';
 
 const ROLES = [
   { v: 'approver', l: 'معتمِد', d: 'يطّلع على كل المؤسسات ويعتمد التقييمات المرفوعة أو يعيدها بملاحظات' },
@@ -20,6 +21,7 @@ const StaffUsers: React.FC = () => {
   const [delFor, setDelFor] = useState<StaffUser | null>(null);
   const [busy, setBusy] = useState(false);
 
+  useEscape(!!(form || pwFor || delFor), () => { setForm(null); setPwFor(null); setDelFor(null); });
   const load = () => fetchStaff().then(setList).catch(() => setList([]));
   useEffect(() => { load(); }, []);
 

@@ -4,18 +4,21 @@ import { summarizeCompliance, getAutoChecks } from '../utils/compliance';
 import { 
     getInstitutions, getEvaluations, getResponses, getIndicators, 
     getImprovements, saveImprovement, deleteImprovement, 
-    getRisks, getComplianceByInstAndYear, generateId, uploadFile, deleteFile
+    getRisks, getComplianceByInstAndYear, generateId, uploadFile, deleteFile, saveEvaluation
 } from '../services/db';
+import Modal from '../components/Modal';
+import { useNavigate } from 'react-router-dom';
 import AttachmentLink, { ATTACHMENT_ACCEPT } from '../components/AttachmentLink';
 import { Institution, ImprovementItem, InstitutionDocument } from '../types';
 import { CURRENT_YEAR } from '../constants';
 import { 
     Clock, CheckCircle, AlertTriangle, Building, 
     ArrowRight, ArrowLeft, Trash2, Layout, Activity, ShieldAlert, Scale,
-    Save, Download, RefreshCw, Paperclip, FileText, X, GripVertical
+    Save, Download, RefreshCw, Paperclip, FileText, X, GripVertical, Pencil, Plus
 } from 'lucide-react';
 import { useUi } from '../contexts/UiContext';
 import { StepBar, StepFooter } from '../components/StepNav';
+import { isImprovementComplete } from '../utils/institutionJourney';
 
 // Declare html2pdf for TypeScript
 declare const html2pdf: any;
@@ -24,7 +27,10 @@ type ColumnType = 'ToDo' | 'Doing' | 'Done';
 
 const Improvements: React.FC = () => {
   const [institutions, setInstitutions] = useState<Institution[]>([]);
-  const { currentWaqfId, showToast } = useUi();
+  const { currentWaqfId, showToast, role } = useUi();
+  const navigate = useNavigate();
+  const [editing, setEditing] = useState<ImprovementItem | null>(null);
+  const [, setEvTick] = useState(0);
   const institutionName = getInstitutions().find(i => i.id === currentWaqfId)?.name || '';
   
   // Drag and Drop State
@@ -94,15 +100,15 @@ const Improvements: React.FC = () => {
                 const ind = indicators[indIndex];
                 
                 if (ind) {
-                    const globalIndNum = indIndex + 1; // 1-based index
+                    // الإجراء والمسؤول تكتبهما المؤسسة (لا نصوص آلية تُرفع كما هي)
                     newItems.push({
                         id: generateId(),
                         evaluation_id: evalId,
                         indicator_id: compositeId,
                         priority: r.score <= 1 ? 'High' : 'Medium',
                         issue_summary: `ضعف الأداء: ${ind.text}`,
-                        recommended_action: `مرتبط بمؤشر رقم ${globalIndNum}`,
-                        owner: 'مدير العمليات',
+                        recommended_action: '',
+                        owner: '',
                         due_date: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
                         status: 'ToDo',
                         notes: `الدرجة الحالية: ${r.score}`
@@ -123,8 +129,8 @@ const Improvements: React.FC = () => {
                 indicator_id: compositeId,
                 priority: 'High',
                 issue_summary: `خطر حرج: ${r.risk_title}`,
-                recommended_action: r.mitigation_plan || 'تفعيل خطة طوارئ عاجلة.',
-                owner: 'لجنة المخاطر',
+                recommended_action: (r.mitigation_plan || '').trim(),
+                owner: (r.owner || '').trim(),
                 due_date: new Date(new Date().setDate(new Date().getDate() + 14)).toISOString().split('T')[0],
                 status: 'ToDo',
                 notes: `شدة الخطر: ${r.probability * r.impact}`
@@ -147,8 +153,8 @@ const Improvements: React.FC = () => {
                     indicator_id: compositeId,
                     priority: 'High',
                     issue_summary: `قصور امتثال: ${gap.label}`,
-                    recommended_action: (gap.note || '').trim() || 'استيفاء المتطلب النظامي فوراً.',
-                    owner: 'أمين السر / المدير',
+                    recommended_action: (gap.note || '').trim(),
+                    owner: '',
                     due_date: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
                     status: 'ToDo',
                     notes: 'مطلب قانوني إلزامي'
@@ -159,6 +165,7 @@ const Improvements: React.FC = () => {
 
     if (newItems.length > 0) {
         newItems.forEach(saveImprovement);
+        if (ev.no_improvements) saveEvaluation({ ...ev, no_improvements: false }).catch(() => {});
         loadImprovements(); // Refresh UI
         showToast(manual ? `تم استيراد ${newItems.length} مهام جديدة` : `تم إنشاء ${newItems.length} مهام تلقائياً`, 'success');
     } else if (manual) {
@@ -308,6 +315,41 @@ const Improvements: React.FC = () => {
       }
   };
   
+  // بند يحتاج إكمال: الإجراء والمسؤول والموعد إلزامية
+  const allItems = [...columns.ToDo, ...columns.Doing, ...columns.Done];
+  const incomplete = allItems.filter(i => !isImprovementComplete(i));
+  const noItemsDeclared = !!currentEval?.no_improvements;
+
+  const saveEdit = async (item: ImprovementItem) => {
+      const isNew = !allItems.some(i => i.id === item.id);
+      try {
+          await saveImprovement(item);
+          if (isNew && currentEval?.no_improvements) await saveEvaluation({ ...currentEval, no_improvements: false });
+      } catch { return; }
+      loadImprovements();
+      setEditing(null);
+      showToast(isNew ? 'تمت إضافة البند' : 'تم حفظ البند', 'success');
+  };
+
+  const newItem = (): ImprovementItem | null => currentEval ? ({
+      id: generateId(), evaluation_id: currentEval.id, indicator_id: `MAN-${generateId().slice(0, 8)}`,
+      priority: 'Medium', issue_summary: '', recommended_action: '', owner: '', due_date: '', status: 'ToDo',
+  }) : null;
+
+  const toggleNoItems = async (checked: boolean) => {
+      if (!currentEval) return;
+      try { await saveEvaluation({ ...currentEval, no_improvements: checked }); setEvTick(t => t + 1); }
+      catch { /* رسالة الخطأ تظهر تلقائياً */ }
+  };
+
+  const finishPlan = () => {
+      if (incomplete.length) {
+          showToast(`أكمل الإجراء والمسؤول والموعد في ${incomplete.length} من البنود (زر التعديل على كل بند)`, 'error');
+          return;
+      }
+      navigate('/review-submit');
+  };
+
   const handleDownloadPDF = () => {
       const element = document.getElementById('kanban-board');
       if (!element) return;
@@ -338,7 +380,13 @@ const Improvements: React.FC = () => {
             <Layout className="text-teal-600"/> لوحة متابعة التحسين
         </h2>
         {currentWaqfId && (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+                {!planLocked && currentEval && (
+                <button type="button" onClick={() => setEditing(newItem())}
+                    className="bg-teal-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-teal-800 shadow-sm font-bold text-sm">
+                    <Plus size={18} aria-hidden="true" /> إضافة بند
+                </button>
+                )}
  {!planLocked && (
                 <button 
                     onClick={() => syncWithSources(true)} 
@@ -375,6 +423,19 @@ const Improvements: React.FC = () => {
                   التقييم مرفوع للوزارة: يمكنك تحديث حالة تنفيذ البنود وإرفاق أدلة الإنجاز طوال السنة، دون إضافة بنود أو حذفها.
               </div>
           )}
+          {!planLocked && totalItems === 0 && currentEval && (
+              <label className="no-print -mt-4 mb-6 flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 bg-white p-4">
+                  <input type="checkbox" checked={noItemsDeclared} onChange={e => toggleNoItems(e.target.checked)} className="mt-1 h-5 w-5 accent-teal-600" />
+                  <span className="text-sm leading-relaxed text-gray-800">
+                      <strong>لا توجد بنود تحسين لهذه الدورة.</strong> أقر بأن نتائج الأداء والامتثال والمخاطر لا تستدعي إجراءات تحسين.
+                  </span>
+              </label>
+          )}
+          {!planLocked && incomplete.length > 0 && (
+              <p role="status" className="no-print -mt-4 mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  {incomplete.length} من البنود تحتاج تحديد الإجراء والمسؤول والموعد. اضغط «تعديل» على البند لإكماله.
+              </p>
+          )}
       </>) : (
           <div className="bg-orange-50 border border-orange-200 p-6 rounded-xl text-center no-print">
               <p className="text-orange-800 font-bold mb-2">لم يتم اختيار مؤسسة</p>
@@ -400,6 +461,7 @@ const Improvements: React.FC = () => {
                         item={item} 
                         onMoveForward={() => moveItem(item, 'forward')}
                         onDelete={planLocked ? undefined : () => handleDelete(item.id, 'ToDo')}
+                        onEdit={planLocked ? undefined : () => setEditing(item)}
                         onDragStart={handleDragStart}
                         badge={getSourceBadge(item.indicator_id)}
                     />
@@ -423,6 +485,7 @@ const Improvements: React.FC = () => {
                         onMoveBack={() => moveItem(item, 'backward')}
                         onMoveForward={() => moveItem(item, 'forward')}
                         onDelete={planLocked ? undefined : () => handleDelete(item.id, 'Doing')}
+                        onEdit={planLocked ? undefined : () => setEditing(item)}
                         onDragStart={handleDragStart}
                         badge={getSourceBadge(item.indicator_id)}
                     />
@@ -445,6 +508,7 @@ const Improvements: React.FC = () => {
                         item={item} 
                         onMoveBack={() => moveItem(item, 'backward')}
                         onDelete={planLocked ? undefined : () => handleDelete(item.id, 'Done')}
+                        onEdit={planLocked ? undefined : () => setEditing(item)}
                         onAttachEvidence={handleAttachEvidence}
                         onRemoveEvidence={handleRemoveEvidence}
                         onDragStart={handleDragStart}
@@ -455,9 +519,54 @@ const Improvements: React.FC = () => {
             </KanbanColumn>
         </div>
       )}
-      <StepFooter step={4} primaryLabel={planLocked ? undefined : 'إنهاء الخطة والانتقال إلى: المراجعة والإرسال'}
-        disabled={totalItems === 0} hint={totalItems === 0 ? 'أضف بنداً واحداً على الأقل' : undefined} />
+      {planLocked
+        ? <StepFooter step={4} />
+        : <StepFooter step={4} primaryLabel="إنهاء الخطة والانتقال إلى: المراجعة والإرسال" onPrimary={finishPlan}
+            disabled={totalItems === 0 && !noItemsDeclared}
+            hint={totalItems === 0 && !noItemsDeclared ? 'أضف بنداً، أو أقرّ بعدم وجود بنود' : undefined} />}
+      {editing && <ItemEditor item={editing} onCancel={() => setEditing(null)} onSave={saveEdit} />}
     </div>
+  );
+};
+
+const ItemEditor: React.FC<{ item: ImprovementItem; onCancel: () => void; onSave: (i: ImprovementItem) => void }> = ({ item, onCancel, onSave }) => {
+  const clean = /^مرتبط بمؤشر رقم/.test(item.recommended_action || '') ? '' : (item.recommended_action || '');
+  const [f, setF] = useState({ ...item, recommended_action: clean });
+  const [tried, setTried] = useState(false);
+  const missing = { issue: !f.issue_summary.trim(), action: !f.recommended_action.trim(), owner: !f.owner.trim(), due: !f.due_date };
+  const invalid = Object.values(missing).some(Boolean);
+  const field = 'min-h-[44px] w-full rounded-lg border px-3 text-sm font-normal outline-none focus:ring-2 focus:ring-teal-500';
+  const err = (bad: boolean) => (tried && bad ? 'border-red-400 bg-red-50' : 'border-gray-300');
+  return (
+    <Modal onClose={onCancel} labelledBy="item-editor-title" className="max-w-lg">
+      <h3 id="item-editor-title" className="mb-4 text-lg font-bold text-navy-900">{item.issue_summary ? 'تعديل بند التحسين' : 'بند تحسين جديد'}</h3>
+      <form className="flex flex-col gap-3" onSubmit={e => { e.preventDefault(); setTried(true); if (!invalid) onSave({ ...f, issue_summary: f.issue_summary.trim(), recommended_action: f.recommended_action.trim(), owner: f.owner.trim() }); }}>
+        <label className="flex flex-col gap-1 text-sm font-bold text-gray-700">الفجوة أو المشكلة
+          <textarea value={f.issue_summary} onChange={e => setF({ ...f, issue_summary: e.target.value })} rows={2} className={`${field} py-2 ${err(missing.issue)}`} />
+        </label>
+        <label className="flex flex-col gap-1 text-sm font-bold text-gray-700">الإجراء المطلوب
+          <textarea value={f.recommended_action} onChange={e => setF({ ...f, recommended_action: e.target.value })} rows={3} placeholder="ما الذي ستفعله المؤسسة لمعالجة الفجوة؟" className={`${field} py-2 ${err(missing.action)}`} />
+        </label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="flex flex-col gap-1 text-sm font-bold text-gray-700">المسؤول
+            <input value={f.owner} onChange={e => setF({ ...f, owner: e.target.value })} placeholder="مثال: المدير التنفيذي" className={`${field} ${err(missing.owner)}`} />
+          </label>
+          <label className="flex flex-col gap-1 text-sm font-bold text-gray-700">الموعد المستهدف
+            <input type="date" value={f.due_date} onChange={e => setF({ ...f, due_date: e.target.value })} className={`${field} ${err(missing.due)}`} />
+          </label>
+        </div>
+        <label className="flex flex-col gap-1 text-sm font-bold text-gray-700">الأولوية
+          <select value={f.priority} onChange={e => setF({ ...f, priority: e.target.value as ImprovementItem['priority'] })} className={`${field} border-gray-300 bg-white`}>
+            <option value="High">عالية</option><option value="Medium">متوسطة</option><option value="Low">منخفضة</option>
+          </select>
+        </label>
+        {tried && invalid && <p role="alert" className="text-sm font-bold text-red-600">أكمل الحقول المظللة</p>}
+        <div className="mt-2 flex justify-end gap-2">
+          <button type="button" onClick={onCancel} className="min-h-[44px] rounded-lg px-4 font-bold text-gray-600 hover:bg-gray-100">إلغاء</button>
+          <button type="submit" className="min-h-[44px] rounded-lg bg-teal-700 px-6 font-bold text-white hover:bg-teal-800">حفظ</button>
+        </div>
+      </form>
+    </Modal>
   );
 };
 
@@ -480,7 +589,8 @@ const KanbanColumn = ({ title, count, children, color, icon, onDrop, onDragOver,
     </div>
 );
 
-const KanbanCard = ({ item, onMoveBack, onMoveForward, onDelete, onAttachEvidence, onRemoveEvidence, onDragStart, badge, isDone }: any) => {
+const KanbanCard = ({ item, onMoveBack, onMoveForward, onDelete, onEdit, onAttachEvidence, onRemoveEvidence, onDragStart, badge, isDone }: any) => {
+    const action = /^مرتبط بمؤشر رقم/.test(item.recommended_action || '') ? '' : (item.recommended_action || '').trim();
     const Icon = badge.icon;
     
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -501,7 +611,7 @@ const KanbanCard = ({ item, onMoveBack, onMoveForward, onDelete, onAttachEvidenc
                 onClick={onDelete} aria-label="حذف المهمة"
                 className="absolute top-2 left-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity no-print hover:scale-110"
             >
-                <Trash2 size={16} />
+                <Trash2 size={16} aria-hidden="true" />
             </button>
             )}
 
@@ -523,14 +633,19 @@ const KanbanCard = ({ item, onMoveBack, onMoveForward, onDelete, onAttachEvidenc
             <h4 className={`font-bold text-sm text-navy-900 dark:text-white mb-2 ${isDone ? 'text-gray-500 line-through decoration-2 decoration-gray-400' : ''}`}>
                 {item.issue_summary}
             </h4>
-            <p className={`text-xs text-gray-500 dark:text-gray-300 mb-3 leading-relaxed bg-gray-50 dark:bg-gray-800 p-2 rounded ${isDone ? 'line-through opacity-75' : ''}`}>
-                {item.recommended_action}
+            <p className={`text-xs mb-3 leading-relaxed p-2 rounded ${action ? 'text-gray-500 dark:text-gray-300 bg-gray-50 dark:bg-gray-800' : 'text-amber-800 bg-amber-50 font-bold'} ${isDone ? 'line-through opacity-75' : ''}`}>
+                {action || 'لم يُحدد الإجراء بعد'}
             </p>
             
-            <div className="flex justify-between items-center text-xs text-gray-400 border-t border-gray-100 dark:border-gray-600 pt-2 mb-3">
-                <span>{item.owner}</span>
-                <span>{item.due_date}</span>
+            <div className="flex justify-between items-center text-xs text-gray-500 border-t border-gray-100 dark:border-gray-600 pt-2 mb-3">
+                <span className={item.owner ? '' : 'font-bold text-amber-700'}>{item.owner || 'المسؤول؟'}</span>
+                <span className={item.due_date ? '' : 'font-bold text-amber-700'}>{item.due_date || 'الموعد؟'}</span>
             </div>
+            {onEdit && (
+                <button type="button" onClick={onEdit} className="no-print mb-3 flex min-h-[36px] w-full items-center justify-center gap-1.5 rounded-lg border border-gray-200 text-xs font-bold text-teal-700 hover:bg-teal-50">
+                    <Pencil size={13} aria-hidden="true" /> تعديل
+                </button>
+            )}
 
             {/* Evidence Attachment (Only for Done items) */}
             {isDone && (
@@ -543,9 +658,9 @@ const KanbanCard = ({ item, onMoveBack, onMoveForward, onDelete, onAttachEvidenc
                             <button 
                                 onClick={() => onRemoveEvidence(item)} 
                                 className="text-gray-400 hover:text-red-500 transition-transform hover:scale-110"
-                                title="حذف الدليل"
+                                title="حذف الدليل" aria-label="حذف الدليل"
                             >
-                                <X size={12}/>
+                                <X size={12} aria-hidden="true"/>
                             </button>
                         </div>
                     ) : (
@@ -566,8 +681,8 @@ const KanbanCard = ({ item, onMoveBack, onMoveForward, onDelete, onAttachEvidenc
                 ) : <div className="flex-1"></div>}
                 
                 {onMoveBack && (
-                     <button onClick={onMoveBack} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-500 transition-colors hover:scale-110" title="عودة للسابق">
-                         <ArrowRight size={16} />
+                     <button onClick={onMoveBack} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-500 transition-colors hover:scale-110" title="عودة للسابق" aria-label="إعادة للمرحلة السابقة">
+                         <ArrowRight size={16} aria-hidden="true" />
                      </button>
                 )}
             </div>

@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Building2, ClipboardCheck, Scale, FileBarChart, Menu, X, ShieldAlert, Settings, LogOut, Lock, Send, Inbox, CheckCircle, RotateCcw, Landmark, RefreshCw, AlertTriangle, MessageSquarePlus, MessageSquare, KeyRound, Shield, Home, ListChecks, Users } from 'lucide-react';
-import { getSession, getSettings, getInstitutionProgress, getPendingEvaluationsCount, getEvaluationByInstAndYear, saveEvaluation, getUnreadFeedbackCount, getUnseenRepliesCount, getInstitutions } from '../services/db';
+import { LayoutDashboard, Building2, ClipboardCheck, Scale, FileBarChart, Menu, X, ShieldAlert, Settings, LogOut, Lock, Send, Inbox, CheckCircle, RotateCcw, Landmark, RefreshCw, AlertTriangle, MessageSquarePlus, MessageSquare, KeyRound, Shield, Home, ListChecks, Users, History } from 'lucide-react';
+import { getSession, getSettings, getInstitutionProgress, getPendingEvaluationsCount, getEvaluations, saveEvaluation, getUnreadFeedbackCount, getUnseenRepliesCount, getInstitutions, refreshData } from '../services/db';
 import { CURRENT_YEAR } from '../constants';
-import { computeBenchmark, nextReportRef } from '../utils/report';
+import { computeBenchmark, buildReport } from '../utils/report';
+import Modal from './Modal';
 import { useUi, isMinistryRole, canApproveRole, ROLE_LABEL } from '../contexts/UiContext';
 import { ChangePasswordModal, CredentialsModal } from './AccountModals';
 
@@ -56,17 +57,19 @@ const SidebarItem = ({ to, icon: Icon, label, active, locked, badge }: any) => (
         ${locked ? 'opacity-50 cursor-not-allowed grayscale hover:scale-100 hover:translate-x-0' : ''}
     `}
     onClick={(e) => locked && e.preventDefault()}
+    aria-current={active ? 'page' : undefined}
+    aria-disabled={locked || undefined}
   >
     <div className="relative">
-        <Icon size={20} className={`transition-transform duration-300 ${active ? 'scale-110' : ''}`} />
+        <Icon size={20} aria-hidden="true" className={`transition-transform duration-300 ${active ? 'scale-110' : ''}`} />
         {badge > 0 && (
             <span className="absolute -top-2 -right-2 bg-red-600 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full animate-pulse">
-                {badge}
+                {badge}<span className="sr-only"> جديد</span>
             </span>
         )}
     </div>
     <span className="font-medium flex-1">{label}</span>
-    {locked && <Lock size={14} className="text-gray-400" />}
+    {locked && <><Lock size={14} className="text-gray-400" aria-hidden="true" /><span className="sr-only">(مقفلة)</span></>}
   </Link>
 );
 
@@ -81,47 +84,86 @@ const AdminActionBar = ({ waqfId, showToast, role }: any) => {
     const [approverName, setApproverName] = useState('');
     const [approverTitle, setApproverTitle] = useState('');
 
+    const [busy, setBusy] = useState(false);
+    // التقييم المرفوع لهذه المؤسسة (من أي دورة)
+    const findPending = () => getEvaluations().filter(e => e.institution_id === waqfId && e.workflow_status === 'submitted')
+        .sort((a, b) => (a.cycle_year === CURRENT_YEAR ? -1 : b.cycle_year === CURRENT_YEAR ? 1 : b.cycle_year - a.cycle_year))[0] || null;
     useEffect(() => {
-        if(waqfId) {
-            const evaluation = getEvaluationByInstAndYear(waqfId, CURRENT_YEAR);
-            setEv(evaluation);
-        }
+        if (waqfId) setEv(findPending());
+        const sync = () => setEv(findPending());
+        window.addEventListener('badgesChanged', sync);
+        return () => window.removeEventListener('badgesChanged', sync);
     }, [waqfId]);
 
     if (!ev || ev.workflow_status !== 'submitted') return null;
 
-    const confirmApprove = () => {
-        // يُثبَّت رقم المرجع ومتوسط المؤسسات لحظة الاعتماد
-        const updatedEv = {
-            ...ev, workflow_status: 'approved', approved_at: new Date().toISOString(),
-            report_ref: ev.report_ref || nextReportRef(ev.cycle_year), report_benchmark: computeBenchmark(ev.cycle_year),
-            ministry_notes: notes.trim(),
-            approver_name: isApprover ? (session.name || '') : approverName.trim(), approver_title: isApprover ? (session.title || '') : approverTitle.trim(),
-        };
-        saveEvaluation(updatedEv);
-        showToast('تم اعتماد الأداء المؤسسي بنجاح', 'success');
-        setEv(updatedEv); // Updates local state to remove the bar immediately
-        setShowApproveModal(false);
+    // قبل الاعتماد أو الإرجاع: نجلب أحدث حالة من الخادم، ولا نعلن النجاح إلا بعد رده
+    const freshPending = async () => {
+        await refreshData();
+        const cur = getEvaluations().find(e => e.id === ev.id);
+        if (!cur || cur.workflow_status !== 'submitted') {
+            setEv(null); setShowApproveModal(false); setShowReturnModal(false);
+            window.dispatchEvent(new Event('badgesChanged')); window.dispatchEvent(new Event('evaluationChanged'));
+            showToast('تغيّرت حالة هذا الطلب (اعتمده أو أعاده مستخدم آخر). تم تحديث الصفحة.', 'error');
+            return null;
+        }
+        return cur;
+    };
+    const afterChange = () => {
+        window.dispatchEvent(new Event('badgesChanged'));
+        window.dispatchEvent(new Event('evaluationChanged'));
     };
 
-    const confirmReturn = () => {
-        if(!reason.trim()) { 
-            showToast('يرجى كتابة سبب الإعادة', 'error'); 
-            return; 
+    const confirmApprove = async () => {
+        if (busy) return;
+        setBusy(true);
+        try {
+            const cur = await freshPending();
+            if (!cur) return;
+            // نسخة ثابتة من التقرير ومتوسط المؤسسات لحظة الاعتماد. رقم المرجع والتاريخ يضعهما الخادم
+            const benchmark = computeBenchmark(cur.cycle_year);
+            const model = buildReport(waqfId, cur.cycle_year, true);
+            if (!model) { showToast('تعذر إعداد التقرير', 'error'); return; }
+            const { evaluation: _e, ...snapshot } = { ...model, benchmark, approved: true } as any;
+            const updatedEv = {
+                ...cur, workflow_status: 'approved' as const, report_benchmark: benchmark, report_snapshot: snapshot,
+                ministry_notes: notes.trim(),
+                approver_name: isApprover ? (session.name || '') : approverName.trim(), approver_title: isApprover ? (session.title || '') : approverTitle.trim(),
+            };
+            await saveEvaluation(updatedEv);
+            showToast('تم اعتماد التقييم وإصدار التقرير', 'success');
+            setEv(null);
+            setShowApproveModal(false);
+            afterChange();
+        } catch { /* رسالة الخطأ تظهر وتبقى حتى يغلقها المستخدم */ }
+        finally { setBusy(false); }
+    };
+
+    const confirmReturn = async () => {
+        if(!reason.trim()) {
+            showToast('يرجى كتابة سبب الإعادة', 'error');
+            return;
         }
-        const updatedEv = {...ev, workflow_status: 'returned', admin_feedback: reason, returned_at: new Date().toISOString()};
-        saveEvaluation(updatedEv);
-        showToast('تم إعادة الملف للمؤسسة للتعديل', 'info');
-        setEv(updatedEv); // Updates local state to remove the bar immediately
-        setShowReturnModal(false);
-        setReason('');
+        if (busy) return;
+        setBusy(true);
+        try {
+            const cur = await freshPending();
+            if (!cur) return;
+            await saveEvaluation({ ...cur, workflow_status: 'returned', admin_feedback: reason.trim() });
+            showToast('تمت إعادة التقييم للمؤسسة للتعديل', 'info');
+            setEv(null);
+            setShowReturnModal(false);
+            setReason('');
+            afterChange();
+        } catch { /* رسالة الخطأ تظهر تلقائياً */ }
+        finally { setBusy(false); }
     };
 
     return (
         <div className="bg-navy-900 text-white p-3 px-4 md:px-6 flex flex-col sm:flex-row gap-2 sm:gap-0 justify-between items-start sm:items-center shadow-lg animate-slideDown z-30 sticky top-0 border-b border-navy-800">
             <div className="flex items-center gap-2">
                 <Lock size={18} className="text-gold-500 shrink-0" />
-                <span className="font-bold text-sm">هذا الملف قيد المراجعة (للاعتماد)</span>
+                <span className="font-bold text-sm">هذا التقييم بانتظار الاعتماد{ev.cycle_year !== CURRENT_YEAR ? ` (دورة ${ev.cycle_year})` : ''}</span>
             </div>
             <div className="flex gap-2 w-full sm:w-auto">
                 <button 
@@ -129,27 +171,26 @@ const AdminActionBar = ({ waqfId, showToast, role }: any) => {
                     onClick={() => setShowReturnModal(true)}
                     className="flex-1 sm:flex-none bg-red-700 hover:bg-red-800 text-white px-3 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-1.5 transition-colors active:scale-95"
                 >
-                    <RotateCcw size={15} /> <span className="hidden sm:inline">إعادة للتعديل</span><span className="sm:hidden">إعادة</span>
+                    <RotateCcw size={15} aria-hidden="true" /> <span className="hidden sm:inline">إعادة للتعديل</span><span className="sm:hidden">إعادة</span>
                 </button>
                 <button 
                     type="button"
                     onClick={() => setShowApproveModal(true)}
                     className="flex-1 sm:flex-none bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-1.5 transition-colors shadow-md active:scale-95"
                 >
-                    <CheckCircle size={15} /> <span className="hidden sm:inline">اعتماد الأداء المؤسسي</span><span className="sm:hidden">اعتماد</span>
+                    <CheckCircle size={15} aria-hidden="true" /> <span className="hidden sm:inline">اعتماد التقييم</span><span className="sm:hidden">اعتماد</span>
                 </button>
             </div>
 
             {/* Return Modal */}
             {showReturnModal && (
-                <div className="fixed inset-0 bg-navy-900/70 z-[60] flex items-center justify-center p-4 text-gray-800 backdrop-blur-sm">
-                    <div className="bg-white rounded-xl p-6 w-full max-w-md animate-scaleIn shadow-2xl">
+                <Modal onClose={() => setShowReturnModal(false)} labelledBy="return-title" className="max-w-md">
                         <div className="flex items-center gap-3 text-red-600 mb-4">
-                            <div className="p-2 bg-red-100 rounded-full"><RotateCcw size={24} /></div>
-                            <h3 className="font-bold text-lg text-gray-900">إعادة الملف للتعديل</h3>
+                            <div className="p-2 bg-red-100 rounded-full"><RotateCcw size={24} aria-hidden="true" /></div>
+                            <h3 id="return-title" className="font-bold text-lg text-gray-900">إعادة التقييم للتعديل</h3>
                         </div>
-                        <p className="text-sm text-gray-600 mb-3">يرجى توضيح أسباب الإعادة للمؤسسة:</p>
-                        <textarea 
+ <label htmlFor="return-reason" className="block text-sm text-gray-600 mb-3">يرجى توضيح أسباب الإعادة للمؤسسة:</label>
+                        <textarea id="return-reason" 
                             className="w-full border p-3 rounded-lg h-32 mb-4 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-red-500 outline-none transition-all" 
                             placeholder="اكتب الملاحظات هنا..."
                             value={reason}
@@ -158,22 +199,20 @@ const AdminActionBar = ({ waqfId, showToast, role }: any) => {
                         />
                         <div className="flex gap-2 justify-end">
                             <button type="button" onClick={() => setShowReturnModal(false)} className="text-gray-500 hover:bg-gray-100 px-4 py-2 rounded-lg font-bold transition-colors">إلغاء</button>
-                            <button type="button" onClick={confirmReturn} className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 font-bold shadow-md transition-colors">تأكيد الإعادة</button>
+                            <button type="button" onClick={confirmReturn} disabled={busy} className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 font-bold shadow-md transition-colors disabled:opacity-60">{busy ? 'جاري الحفظ…' : 'تأكيد الإعادة'}</button>
                         </div>
-                    </div>
-                </div>
+                </Modal>
             )}
 
             {/* Approve Modal */}
             {showApproveModal && (
-                <div className="fixed inset-0 bg-navy-900/70 z-[60] flex items-center justify-center p-4 text-gray-800 backdrop-blur-sm">
-                    <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90dvh] overflow-y-auto animate-scaleIn shadow-2xl border-t-4 border-green-500">
+                <Modal onClose={() => setShowApproveModal(false)} labelledBy="approve-title" className="max-w-lg border-t-4 border-green-500">
                         <div className="flex items-center gap-3 text-green-600 mb-4">
-                            <div className="p-2 bg-green-100 rounded-full"><CheckCircle size={24} /></div>
-                            <h3 className="font-bold text-lg text-gray-900">اعتماد الأداء المؤسسي النهائي</h3>
+                            <div className="p-2 bg-green-100 rounded-full"><CheckCircle size={24} aria-hidden="true" /></div>
+                            <h3 id="approve-title" className="font-bold text-lg text-gray-900">اعتماد التقييم وإصدار التقرير</h3>
                         </div>
                         <p className="text-sm text-gray-600 mb-4 leading-relaxed">
-                            يصدر التقرير الرسمي للمؤسسة برقم مرجع وتاريخ اليوم.
+                            يصدر التقرير الرسمي للمؤسسة برقم مرجع وتاريخ اليوم، وتُحفظ منه نسخة ثابتة لا تتغير بعد الاعتماد.
                         </p>
                         <div className="flex flex-col gap-3 mb-6">
                             <label className="flex flex-col gap-1 text-sm font-bold text-gray-700">
@@ -200,10 +239,9 @@ const AdminActionBar = ({ waqfId, showToast, role }: any) => {
                         </div>
                         <div className="flex gap-3 justify-end">
                             <button type="button" onClick={() => setShowApproveModal(false)} className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-lg font-bold transition-colors">إلغاء</button>
-                            <button type="button" onClick={confirmApprove} className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 font-bold shadow-md transition-colors">نعم، اعتماد</button>
+                            <button type="button" onClick={confirmApprove} disabled={busy} className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 font-bold shadow-md transition-colors disabled:opacity-60">{busy ? 'جاري الاعتماد…' : 'نعم، اعتماد'}</button>
                         </div>
-                    </div>
-                </div>
+                </Modal>
             )}
         </div>
     );
@@ -276,6 +314,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { to: '/system-feedback', icon: MessageSquare, label: 'ملاحظات النظام', roles: ['admin'], badge: unreadFeedback },
     { to: '/accounts', icon: KeyRound, label: 'حسابات المؤسسات', roles: ['admin'] },
     { to: '/staff', icon: Users, label: 'مستخدمو الوزارة', roles: ['admin'] },
+    { to: '/audit', icon: History, label: 'سجل العمليات', roles: ['admin'] },
     { to: '/institutions', icon: Building2, label: role === 'admin' ? 'بيانات المؤسسات' : 'بيانات المؤسسة', roles: ['admin', 'user'] },
     { to: '/financial-reports', icon: Landmark, label: 'القوائم المالية', roles: ['admin', 'user'] },
     { to: '/evaluation', icon: ClipboardCheck, label: 'الأداء المؤسسي', roles: ['admin', 'user'] },
@@ -303,8 +342,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         <div className="flex items-center justify-between p-4 border-b border-navy-800 min-h-[5rem]">
           <div className="flex items-center gap-3">
              <div className="w-10 h-10 min-w-[2.5rem] bg-white rounded-full p-1 overflow-hidden flex items-center justify-center shadow-md transition-transform hover:scale-110 duration-300">
-                 <img 
-                    src="/logo-emblem.png" 
+ <img 
+                    src="/logo-emblem.png" alt="شعار وزارة الأوقاف والشؤون الدينية" 
                     className="w-full h-full object-contain" 
                     onError={(e) => {
                         e.currentTarget.style.display = 'none';
@@ -316,8 +355,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                  <span className="text-[10px] text-gray-400 mt-1 font-medium">وزارة الأوقاف والشؤون الدينية</span>
              </div>
           </div>
-          <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-gray-400 hover:text-white transition-transform hover:rotate-90">
-            <X size={24} />
+          <button type="button" onClick={() => setSidebarOpen(false)} aria-label="إغلاق القائمة" className="lg:hidden text-gray-400 hover:text-white transition-transform hover:rotate-90">
+            <X size={24} aria-hidden="true" />
           </button>
         </div>
 
@@ -359,7 +398,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 </>
               ) : <p className="px-4 py-5 text-xs leading-relaxed text-gray-400">اختر مؤسسة من متابعة المؤسسات</p>}
               <p className="px-4 pt-5 text-xs font-bold text-gray-400">النظام</p>
-              {['/system-feedback', '/accounts', '/staff', '/settings'].map(path => renderNavItem(navItems.find(item => item.to === path)!))}
+              {['/system-feedback', '/accounts', '/staff', '/audit', '/settings'].map(path => renderNavItem(navItems.find(item => item.to === path)!))}
             </>
           ) : navItems.map(renderNavItem)}
           <button
@@ -389,8 +428,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 <LogOut size={20} />
                 <span className="hidden md:inline text-sm font-bold">تسجيل الخروج</span>
             </button>
-            <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-gray-600 dark:text-gray-200 transition-transform hover:scale-110 p-1 ml-2">
-                <Menu size={24} />
+            <button type="button" onClick={() => setSidebarOpen(true)} aria-label="فتح القائمة" aria-expanded={sidebarOpen} className="lg:hidden text-gray-600 dark:text-gray-200 transition-transform hover:scale-110 p-1 ml-2">
+                <Menu size={24} aria-hidden="true" />
             </button>
             
             <div className="flex flex-col items-center flex-1 lg:flex-none lg:items-start min-w-0">
@@ -400,11 +439,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
             <div className="flex items-center gap-2 md:gap-4 mr-2">
                 <button 
+                  type="button"
                   onClick={() => window.location.reload()}
                   className="p-2 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-full transition-all"
-                  title="تحديث سريع"
+                  title="تحديث سريع" aria-label="تحديث الصفحة"
                 >
-                    <RefreshCw size={18} />
+                    <RefreshCw size={18} aria-hidden="true" />
                 </button>
 
                 <div className="hidden md:block text-left">
