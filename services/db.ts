@@ -240,7 +240,11 @@ export const saveIndicators = (list: Indicator[]) => {
 export const getEvaluations = (y?: number) => { const e = data<Evaluation>(DB_KEYS.EVALUATIONS); return y ? e.filter(x => x.cycle_year === y) : e; };
 export const getEvaluationByInstAndYear = (id: string, y: number) => getEvaluations().find(e => e.institution_id === id && e.cycle_year === y);
 export const saveEvaluation = (e: Evaluation) => upsert(DB_KEYS.EVALUATIONS, e);
-export const getPendingEvaluationsCount = () => getEvaluations(CURRENT_YEAR).filter(e => e.workflow_status === 'submitted').length;
+// نفس منطق صفحة طلبات الاعتماد: التقييمات المرفوعة لمؤسسات موجودة فعلاً
+export const getPendingEvaluationsCount = () => {
+  const ids = new Set(getInstitutions().map(i => i.id));
+  return getEvaluations(CURRENT_YEAR).filter(e => e.workflow_status === 'submitted' && ids.has(e.institution_id)).length;
+};
 export const getResponses = (id: string) => data<Response>(DB_KEYS.RESPONSES).filter(r => r.evaluation_id === id);
 export const getAllResponses = () => data<Response>(DB_KEYS.RESPONSES);
 export const saveResponse = (r: Response) => {
@@ -290,6 +294,11 @@ export const saveFeedback = (f: SystemFeedback) => upsert(DB_KEYS.FEEDBACK, f);
 export const markFeedbackRead = (id: string) => {
   const f = getFeedback().find(x => x.id === id);
   if (f) upsert(DB_KEYS.FEEDBACK, { ...f, is_read: true });
+  window.dispatchEvent(new Event('badgesChanged'));
+};
+export const deleteFeedback = (id: string) => {
+  remove(DB_KEYS.FEEDBACK, id);
+  window.dispatchEvent(new Event('badgesChanged'));
 };
 export const getUnreadFeedbackCount = () => getFeedback().filter(f => !f.is_read).length;
 // للمؤسسة: ردود الوزارة التي لم تطّلع عليها بعد
@@ -302,18 +311,21 @@ export const replyToFeedback = (id: string, status: SystemFeedback['status'], re
   if (!f) return Promise.resolve();
   const text = reply.trim();
   const changedReply = text !== (f.admin_reply || '');
-  return upsert(DB_KEYS.FEEDBACK, {
+  const saved = upsert(DB_KEYS.FEEDBACK, {
     ...f, status, is_read: true, admin_reply: text || undefined,
     replied_at: changedReply ? (text ? new Date().toISOString() : undefined) : f.replied_at,
     reply_seen: changedReply ? false : f.reply_seen,
   });
+  window.dispatchEvent(new Event('badgesChanged'));
+  return saved;
 };
 
 // ─── إعادة مؤسسة للوضع الأولي (للمدير) ──────────────────────────────────────
-export const resetInstitution = async (id: string) => {
+export const resetInstitution = async (id: string, withFeedback = false) => {
   await writeQueue;
-  await request('POST', `/admin/institutions/${encodeURIComponent(id)}/reset`);
+  await request('POST', `/admin/institutions/${encodeURIComponent(id)}/reset${withFeedback ? '?feedback=1' : ''}`);
   await loadData();
+  window.dispatchEvent(new Event('badgesChanged'));
 };
 
 // ─── النسخ الاحتياطي (للمدير) ───────────────────────────────────────────────

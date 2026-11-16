@@ -236,7 +236,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   useEffect(() => {
     const onSeen = () => setRepliesTick(t => t + 1);
     window.addEventListener('feedbackRepliesSeen', onSeen);
-    return () => window.removeEventListener('feedbackRepliesSeen', onSeen);
+    window.addEventListener('badgesChanged', onSeen);
+    return () => { window.removeEventListener('feedbackRepliesSeen', onSeen); window.removeEventListener('badgesChanged', onSeen); };
   }, []);
   const unseenReplies = role === 'user' ? getUnseenRepliesCount() : 0;
 

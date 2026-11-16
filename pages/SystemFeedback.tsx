@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { getFeedback, markFeedbackRead, replyToFeedback } from '../services/db';
+import { getFeedback, markFeedbackRead, replyToFeedback, deleteFeedback } from '../services/db';
 import { SystemFeedback, FeedbackStatus } from '../types';
 import { useUi } from '../contexts/UiContext';
-import { MessageSquare, Eye, Filter, Send } from 'lucide-react';
+import { MessageSquare, Filter, Send, Trash2 } from 'lucide-react';
 
 export const FEEDBACK_STATUS: Record<FeedbackStatus, { label: string; cls: string }> = {
   new: { label: 'جديدة', cls: 'bg-sky-100 text-sky-800' },
@@ -34,6 +34,15 @@ const SystemFeedbackPage: React.FC = () => {
   const handleRead = (id: string) => {
     markFeedbackRead(id);
     setFeedbackList(prev => prev.map(f => f.id === id ? { ...f, is_read: true } : f));
+  };
+  const [confirmDel, setConfirmDel] = useState<string | null>(null);
+  // فتح الملاحظة يعني الاطلاع عليها: تُحدَّد كمقروءة ويختفي عدّادها
+  const toggle = (f: SystemFeedback) => { const open = expanded !== f.id; setExpanded(open ? f.id : null); if (open && !f.is_read) handleRead(f.id); };
+  const handleDelete = (id: string) => {
+    deleteFeedback(id);
+    setFeedbackList(prev => prev.filter(f => f.id !== id));
+    setConfirmDel(null);
+    showToast('تم حذف الملاحظة', 'success');
   };
 
   const categories = ['الكل', 'اقتراح تطوير', 'صعوبة استخدام', 'خطأ تقني', 'ملاحظة على الأسئلة', 'أخرى'];
@@ -105,8 +114,10 @@ const SystemFeedbackPage: React.FC = () => {
                   className={`bg-white rounded-xl border shadow-sm overflow-hidden transition-all ${!f.is_read ? 'border-teal-300 border-r-4' : 'border-gray-200'}`}
                 >
                   <div
+                    role="button" tabIndex={0} aria-expanded={expanded === f.id}
                     className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
-                    onClick={() => setExpanded(expanded === f.id ? null : f.id)}
+                    onClick={() => toggle(f)}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(f); } }}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -136,14 +147,19 @@ const SystemFeedbackPage: React.FC = () => {
                       {f.image && (
                         <img src={f.image} alt="مرفق" className="max-h-48 rounded-lg border border-gray-200 shadow-sm mb-3" />
                       )}
-                      {!f.is_read && (
-                        <button
-                          onClick={() => handleRead(f.id)}
-                          className="flex items-center gap-2 text-xs text-teal-600 hover:text-teal-800 font-bold transition-colors mb-3"
-                        >
-                          <Eye size={14} /> تحديد كمقروء
-                        </button>
-                      )}
+                      <div className="mb-3 flex justify-end">
+                        {confirmDel === f.id ? (
+                          <span className="flex items-center gap-2 text-xs font-bold">
+                            حذف الملاحظة نهائياً؟
+                            <button onClick={() => handleDelete(f.id)} className="rounded-lg bg-red-600 px-3 py-1.5 text-white">حذف</button>
+                            <button onClick={() => setConfirmDel(null)} className="rounded-lg bg-gray-100 px-3 py-1.5 text-gray-700">إلغاء</button>
+                          </span>
+                        ) : (
+                          <button onClick={() => setConfirmDel(f.id)} className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50">
+                            <Trash2 size={14} aria-hidden="true" /> حذف الملاحظة
+                          </button>
+                        )}
+                      </div>
                       <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 space-y-3">
                         <div className="flex flex-wrap items-center gap-2" role="group" aria-label="حالة الملاحظة">
                           <span className="text-xs font-bold text-gray-600">الحالة:</span>

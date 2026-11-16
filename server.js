@@ -510,7 +510,9 @@ app.post('/api/admin/institutions/:id/reset', requireAdmin, wrap(async (req, res
     manager_name: '', documents: [], capital_omr: 0, employees_omani: 0, employees_non_omani: 0,
     employees_seconded: 0, created_at: d.created_at || new Date().toISOString(),
   };
-  await pool.query("DELETE FROM app_records WHERE institution_id = $1 AND collection NOT IN ('waqf_institutions','waqf_feedback')", [id]);
+  // ملاحظات المؤسسة على النظام تُحذف فقط إذا طلب المدير ذلك
+  const keep = req.query.feedback === '1' ? ['waqf_institutions'] : ['waqf_institutions', 'waqf_feedback'];
+  await pool.query('DELETE FROM app_records WHERE institution_id = $1 AND NOT (collection = ANY($2))', [id, keep]);
   await pool.query('DELETE FROM app_files WHERE institution_id = $1', [id]);
   await pool.query("UPDATE app_records SET data = $1::jsonb, updated_at = now() WHERE collection = 'waqf_institutions' AND id = $2", [JSON.stringify(clean), id]);
   res.json({ ok: true });

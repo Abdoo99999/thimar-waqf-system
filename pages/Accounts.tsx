@@ -85,8 +85,9 @@ const Accounts: React.FC = () => {
   const filledCount = accounts.filter(a => dataInfo(a.institution_id).has).length;
   const shown = onlyFilled ? accounts.filter(a => dataInfo(a.institution_id).has) : accounts;
 
+  const [resetFeedback, setResetFeedback] = useState(true);
   const handleReset = async (instId: string) => {
-    try { await resetInstitution(instId); } catch (e: any) { showToast(e?.message || 'تعذر مسح البيانات', 'error'); return; }
+    try { await resetInstitution(instId, resetFeedback); } catch (e: any) { showToast(e?.message || 'تعذر مسح البيانات', 'error'); return; }
     setInstitutions(getInstitutions());
     setConfirmResetId(null);
     setResetDone(instId);
@@ -248,6 +249,10 @@ const Accounts: React.FC = () => {
                   <li>الامتثال وسجل المخاطر</li>
                   <li>خطة التحسين والمرفقات والاعتماد والتقرير</li>
                 </ul>
+                <label className="mb-4 flex min-h-[44px] cursor-pointer items-center gap-2 text-sm font-bold text-gray-700">
+                  <input type="checkbox" checked={resetFeedback} onChange={e => setResetFeedback(e.target.checked)} className="h-5 w-5 accent-orange-500" />
+                  حذف ملاحظاتها على النظام أيضاً
+                </label>
                 <p className="text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 mb-5">
                   يبقى اسم المؤسسة ورمز الدخول وكلمة المرور كما هي، وتجد المؤسسة ملفها فارغاً وتبدأ من الخطوة الأولى. لا يمكن التراجع عن المسح.
                 </p>
